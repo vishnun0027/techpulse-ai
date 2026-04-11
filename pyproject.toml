@@ -1,0 +1,18 @@
+[project]
+name = "techpulse-ai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "apscheduler>=3.11.2",
+    "feedparser>=6.0.12",
+    "groq>=1.1.2",
+    "httpx>=0.28.1",
+    "loguru>=0.7.3",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "supabase>=2.28.3",
+    "tenacity>=9.1.4",
+    "upstash-redis>=1.7.0",
+]
