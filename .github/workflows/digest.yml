@@ -1,7 +1,7 @@
 name: Daily Digest Delivery
 on:
   schedule:
-    - cron: '30 2 * * *'    # 8:00 AM IST = 2:30 AM UTC
+    - cron: '30 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -19,13 +19,13 @@ jobs:
       - name: Send digest
         run: uv run python -m services.delivery.main
     env:
-      GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
-      SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY:             ${{ secrets.SUPABASE_KEY }}
-      UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: "llama-3.3-70b-versatile"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
       UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-      SLACK_WEBHOOK_URL:        ${{ secrets.SLACK_WEBHOOK_URL }}
-      DISCORD_WEBHOOK_URL:      ${{ secrets.DISCORD_WEBHOOK_URL }}
-      GROQ_MODEL:               "llama-3.3-70b-versatile"
-      TOP_N_ARTICLES:           "10"
-      DEDUP_TTL_DAYS:           "7"
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      TOP_N_ARTICLES: "10"
+      DEDUP_TTL_DAYS: "7"

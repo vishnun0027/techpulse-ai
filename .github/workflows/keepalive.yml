@@ -1,7 +1,7 @@
 name: Keep Supabase Alive
 on:
   schedule:
-    - cron: '0 9 * * 1'    # every Monday 9 AM UTC
+    - cron: '0 9 * * 1'
   workflow_dispatch:
 
 jobs:
@@ -9,10 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase
+        run: curl -s -o /dev/null "$SUPABASE_URL/rest/v1/"
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          curl -s "$SUPABASE_URL/rest/v1/" \
-            -H "apikey: $SUPABASE_KEY" > /dev/null
-          echo "Supabase pinged successfully ✅"

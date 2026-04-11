@@ -1,8 +1,8 @@
-name: Hourly Collect + Summarize
+name: Hourly Collect and Summarize
 on:
   schedule:
-    - cron: '0 * * * *'     # every hour
-  workflow_dispatch:          # manual trigger button on GitHub
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   run:
@@ -21,11 +21,11 @@ jobs:
       - name: Summarize articles
         run: uv run python -m services.summarizer.main
     env:
-      GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
-      SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY:             ${{ secrets.SUPABASE_KEY }}
-      UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: "llama-3.3-70b-versatile"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
       UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-      GROQ_MODEL:               "llama-3.3-70b-versatile"
-      TOP_N_ARTICLES:           "10"
-      DEDUP_TTL_DAYS:           "7"
+      TOP_N_ARTICLES: "10"
+      DEDUP_TTL_DAYS: "7"
