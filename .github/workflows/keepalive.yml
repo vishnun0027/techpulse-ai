@@ -2,7 +2,7 @@ name: Keep Supabase Alive
 on:
   schedule:
     - cron: '0 9 * * 1'
-  workflow_dispatch:
+  workflow_dispatch:            # ← no push trigger needed for this one
 
 jobs:
   ping:
