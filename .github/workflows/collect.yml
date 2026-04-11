@@ -1,0 +1,31 @@
+name: Hourly Collect + Summarize
+on:
+  schedule:
+    - cron: '0 * * * *'     # every hour
+  workflow_dispatch:          # manual trigger button on GitHub
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: Install deps
+        run: uv sync
+      - name: Collect articles
+        run: uv run python -m services.collector.main
+      - name: Summarize articles
+        run: uv run python -m services.summarizer.main
+    env:
+      GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+      SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY:             ${{ secrets.SUPABASE_KEY }}
+      UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      GROQ_MODEL:               "llama-3.3-70b-versatile"
+      TOP_N_ARTICLES:           "10"
+      DEDUP_TTL_DAYS:           "7"

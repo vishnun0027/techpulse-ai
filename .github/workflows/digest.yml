@@ -1,0 +1,31 @@
+name: Daily Digest Delivery
+on:
+  schedule:
+    - cron: '30 2 * * *'    # 8:00 AM IST = 2:30 AM UTC
+  workflow_dispatch:
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: Install deps
+        run: uv sync
+      - name: Send digest
+        run: uv run python -m services.delivery.main
+    env:
+      GROQ_API_KEY:             ${{ secrets.GROQ_API_KEY }}
+      SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY:             ${{ secrets.SUPABASE_KEY }}
+      UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      SLACK_WEBHOOK_URL:        ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL:      ${{ secrets.DISCORD_WEBHOOK_URL }}
+      GROQ_MODEL:               "llama-3.3-70b-versatile"
+      TOP_N_ARTICLES:           "10"
+      DEDUP_TTL_DAYS:           "7"
