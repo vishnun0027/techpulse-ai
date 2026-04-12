@@ -16,7 +16,7 @@ def save_article(article: dict) -> bool:
 
 def get_top_articles(n: int = 10) -> list:
     from datetime import datetime, timedelta
-    since = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    since = (datetime.utcnow() - timedelta(hours=8)).isoformat()  # ← change 24 to 8
     resp = (
         supabase.table("articles")
         .select("title, summary, source_url, source, score")
