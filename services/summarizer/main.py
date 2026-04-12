@@ -1,12 +1,12 @@
-import time
+import asyncio
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from loguru import logger
-from tenacity import retry, wait_exponential, stop_after_attempt
+from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt
 from shared.config import settings
-from shared.redis_client import read_from_stream, delete_from_stream
+from shared.redis_client import ensure_group_exists, read_from_group, acknowledge_message
 from shared.db import save_article
 
 
@@ -49,35 +49,40 @@ parser = JsonOutputParser(pydantic_object=ArticleAnalysis)
 chain  = prompt | llm | parser
 
 
-# ── Groq Call With Retry ──────────────────────────────────────────────────────
-@retry(wait=wait_exponential(min=30, max=120), stop=stop_after_attempt(3))
-def call_groq(title: str, content: str, source: str) -> ArticleAnalysis:
-    result = chain.invoke({
-        "title":   title,
-        "source":  source,
-        "content": content[:1500]
-    })
-    return ArticleAnalysis(**result)
+# ── Groq Call With Async Retry ────────────────────────────────────────────────
+async def call_groq_async(title: str, content: str, source: str) -> ArticleAnalysis:
+    async for attempt in AsyncRetrying(
+        wait=wait_exponential(min=10, max=60), 
+        stop=stop_after_attempt(3)
+    ):
+        with attempt:
+            result = await chain.ainvoke({
+                "title":   title,
+                "source":  source,
+                "content": content[:1500]
+            })
+            return ArticleAnalysis(**result)
 
 
 # ── Main Summarizer ───────────────────────────────────────────────────────────
-def summarize():
-    messages = read_from_stream(count=10)      # ← reduced from 50 to 10
-    if not messages:
-        logger.info("No messages in stream")
-        return
+GROUP_NAME    = "summarizer-group"
+CONSUMER_NAME = "worker-1"
 
-    logger.info(f"Summarizing {len(messages)} articles...")
-
-    for msg in messages:
+async def process_message(msg: dict, semaphore: asyncio.Semaphore):
+    """Process a single message with rate limiting."""
+    async with semaphore:
         d = msg["data"]
+        msg_id = msg["id"]
         try:
-            result = call_groq(
+            result = await call_groq_async(
                 title=d.get("title", ""),
                 content=d.get("content", ""),
                 source=d.get("source", "")
             )
-            save_article({
+            
+            # Save to database (shared.db is sync, but small enough to run here)
+            # Use run_in_executor if database latency is high
+            success = save_article({
                 "title":      d.get("title"),
                 "source_url": d.get("source_url"),
                 "source":     d.get("source"),
@@ -86,16 +91,39 @@ def summarize():
                 "score":      result.score,
                 "topics":     result.topics,
             })
-            delete_from_stream(msg["id"])
-            logger.success(
-                f"[score={result.score}] [{result.topics}] "
-                f"{d.get('title', '')[:50]}"
-            )
-            time.sleep(10)     # ← 10s between calls = safe under 30 req/min
+            
+            if success:
+                acknowledge_message(GROUP_NAME, msg_id)
+                logger.success(
+                    f"[score={result.score}] [{result.topics}] "
+                    f"{d.get('title', '')[:50]}"
+                )
+            else:
+                logger.error(f"Failed to save article {msg_id}")
+
+            # Safe delay to maintain ~20 RPM (3s/req)
+            await asyncio.sleep(3)
 
         except Exception as e:
-            logger.error(f"Summarize failed: {e}")
+            logger.error(f"Summarize failed for message {msg_id}: {e}")
+
+async def summarize():
+    ensure_group_exists(GROUP_NAME)
+    
+    # Increase count to 30 for better throughput per run
+    messages = read_from_group(GROUP_NAME, CONSUMER_NAME, count=30)
+    if not messages:
+        logger.info("No new messages in stream")
+        return
+
+    logger.info(f"Summarizing {len(messages)} articles (Async)...")
+    
+    # Use a semaphore to process one at a time but with async efficiency
+    # and controlled timing.
+    semaphore = asyncio.Semaphore(1)
+    tasks = [process_message(m, semaphore) for m in messages]
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
-    summarize()
+    asyncio.run(summarize())
