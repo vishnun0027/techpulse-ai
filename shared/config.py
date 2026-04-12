@@ -3,7 +3,8 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     groq_api_key: str = Field(..., env="GROQ_API_KEY")
-    groq_model: str = Field("llama-3.3-70b-versatile", env="GROQ_MODEL")
+    groq_model: str = Field("llama-3.1-8b-instant", env="GROQ_MODEL")
+
     supabase_url: str = Field(..., env="SUPABASE_URL")
     supabase_key: str = Field(..., env="SUPABASE_KEY")
     upstash_redis_rest_url: str = Field(..., env="UPSTASH_REDIS_REST_URL")
