@@ -50,7 +50,7 @@ chain  = prompt | llm | parser
 
 
 # ── Groq Call With Retry ──────────────────────────────────────────────────────
-@retry(wait=wait_exponential(min=3, max=30), stop=stop_after_attempt(3))
+@retry(wait=wait_exponential(min=10, max=60), stop=stop_after_attempt(5))
 def call_groq(title: str, content: str, source: str) -> ArticleAnalysis:
     result = chain.invoke({
         "title":   title,
@@ -91,7 +91,7 @@ def summarize():
                 f"[score={result.score}] [{result.topics}] "
                 f"{d.get('title', '')[:50]}"
             )
-            time.sleep(2)
+            time.sleep(6)    # ← increased from 2 to 6
 
         except Exception as e:
             logger.error(f"Summarize failed: {e}")
