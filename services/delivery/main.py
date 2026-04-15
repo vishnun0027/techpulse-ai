@@ -1,7 +1,8 @@
 import httpx
 from loguru import logger
 from shared.config import settings
-from shared.db import get_top_articles
+from shared.db import get_top_articles, mark_as_delivered, log_telemetry
+from shared.redis_client import redis, STREAM_RAW
 
 def slack_payload(articles: list) -> dict:
     blocks = [{
@@ -18,6 +19,20 @@ def slack_payload(articles: list) -> dict:
                               f"{a['summary']}")}
         })
         blocks.append({"type": "divider"})
+    
+    # Add Health Stats Footer
+    try:
+        pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": f"📊 *System Health* — {len(articles)} delivered | {pending} pending in queue"
+            }]
+        })
+    except:
+        pass
+
     return {"blocks": blocks}
 
 def discord_payload_chunks(articles: list) -> list[dict]:
@@ -38,8 +53,17 @@ def discord_payload_chunks(articles: list) -> list[dict]:
         else:
             current += entry
 
-    if current.strip():
-        chunks.append({"content": current})
+    # Add Health Stats Footer
+    try:
+        pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
+        footer = f"\n---\n📊 **System Health**: {len(articles)} delivered | {pending} pending"
+        # Add to last chunk if possible, or new chunk
+        if len(chunks[-1]["content"]) + len(footer) < 1950:
+            chunks[-1]["content"] += footer
+        else:
+            chunks.append({"content": footer})
+    except:
+        pass
 
     return chunks
 
@@ -73,6 +97,14 @@ def deliver():
                 logger.success(f"Discord chunk {i+1}/{len(chunks)} ✅")
             except Exception as e:
                 logger.error(f"Discord chunk {i+1} failed: {e}")
+
+    # Mark as delivered so they are not picked up in the next run
+    mark_as_delivered([a["source_url"] for a in articles])
+
+    # Record telemetry
+    log_telemetry("delivery", {
+        "count": len(articles)
+    })
 
 if __name__ == "__main__":
     deliver()

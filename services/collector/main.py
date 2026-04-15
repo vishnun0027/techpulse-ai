@@ -2,6 +2,7 @@ import time
 import feedparser
 from loguru import logger
 from shared.redis_client import check_seen, mark_seen, check_title_seen, mark_title_seen, push_to_stream
+from shared.db import log_telemetry
 from services.collector.sources import SOURCES
 from services.collector.filter import is_relevant
 
@@ -51,6 +52,13 @@ def collect():
     logger.success(
         f"Collection complete — {total} queued, {skipped} skipped"
     )
+    
+    # Record telemetry
+    log_telemetry("collector", {
+        "found": total + skipped,
+        "queued": total,
+        "skipped": skipped
+    })
 
 
 if __name__ == "__main__":

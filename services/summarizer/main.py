@@ -7,7 +7,7 @@ from loguru import logger
 from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt
 from shared.config import settings
 from shared.redis_client import ensure_group_exists, read_from_group, acknowledge_message
-from shared.db import save_article
+from shared.db import save_article, log_telemetry
 
 
 # ── Structured Output Schema ──────────────────────────────────────────────────
@@ -68,8 +68,8 @@ async def call_groq_async(title: str, content: str, source: str) -> ArticleAnaly
 GROUP_NAME    = "summarizer-group"
 CONSUMER_NAME = "worker-1"
 
-async def process_message(msg: dict, semaphore: asyncio.Semaphore):
-    """Process a single message with rate limiting."""
+async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
+    """Process a single message with rate limiting. Returns success."""
     async with semaphore:
         d = msg["data"]
         msg_id = msg["id"]
@@ -98,14 +98,17 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore):
                     f"[score={result.score}] [{result.topics}] "
                     f"{d.get('title', '')[:50]}"
                 )
+                return True
             else:
                 logger.error(f"Failed to save article {msg_id}")
+                return False
 
             # Safe delay to maintain ~20 RPM (3s/req)
             await asyncio.sleep(3)
 
         except Exception as e:
             logger.error(f"Summarize failed for message {msg_id}: {e}")
+            return False
 
 async def summarize():
     ensure_group_exists(GROUP_NAME)
@@ -122,7 +125,15 @@ async def summarize():
     # and controlled timing.
     semaphore = asyncio.Semaphore(1)
     tasks = [process_message(m, semaphore) for m in messages]
-    await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+    
+    # Record telemetry
+    success_count = sum(1 for r in results if r)
+    log_telemetry("summarizer", {
+        "read": len(messages),
+        "summarized": success_count,
+        "failed": len(messages) - success_count
+    })
 
 
 if __name__ == "__main__":
