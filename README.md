@@ -12,9 +12,11 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 
 - **🚀 Async Performance**: Refactored with `asyncio` to reduce GitHub Actions execution time by ~70%, saving valuable free-tier minutes.
 - **🧠 Zero-Cost Pro Summaries**: Powered by **Groq (Llama-3.1-8b-instant)**. Optimized for high throughput and reliable processing without hitting free-tier rate limits.
+- **🔍 Stateful Delivery**: Articles are tracked via an `is_delivered` flag to ensure each high-quality article is sent exactly once, even with multiple daily runs.
+- **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium Web Dashboard** (Streamlit) and a **Beautiful CLI Monitor** (Rich).
 - **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing. No message is lost if a database or network failure occurs.
-- **🔍 Smart Deduplication**: Two-layer deduplication (URL hashing + Normalized Title hashing) ensures you never receive the same story twice, even from different sources.
-- **⚡ Proactive Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history for a fresh start.
+- **⚡ Telemetry Logging**: Every run tracks metrics (fetched vs. queued, success vs. failure) to provide full visibility into the system pipeline.
+- **proactive Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history for a fresh start.
 - **📡 Multi-Channel Delivery**: Formatted Block Kit payloads for Slack and Markdown-optimized chunks for Discord.
 
 ---
@@ -27,12 +29,15 @@ graph TD
     Filter -->|XADD| Stream[(Redis Stream)]
     Stream -->|XREADGROUP| Summarizer[Async Summarizer]
     Summarizer -->|Groq API| LLM[Llama 3.1 8B]
-    LLM -->|JSON Schema| Summarizer
     Summarizer -->|Upsert| DB[(Supabase PostgreSQL)]
-    Summarizer -->|XACK| Stream
     Delivery[Delivery Service] -->|Get Top Articles| DB
-    Delivery -->|Webhook| Slack[Slack]
-    Delivery -->|Webhook| Discord[Discord]
+    Delivery -->|Mark Delivered| DB
+    Delivery -->|Webhook| Notifications[Slack / Discord]
+
+    Collector -.->|Telemetry| TM[(Telemetry Table)]
+    Summarizer -.->|Telemetry| TM
+    Delivery -.->|Telemetry| TM
+    UI[Web / CLI Monitor] -->|Query| TM
 ```
 
 ---
@@ -82,6 +87,19 @@ You can run the full pipeline with a single command:
 uv run python -m services.collector.main && \
 uv run python -m services.summarizer.main && \
 uv run python -m services.delivery.main
+```
+
+### 5. Monitoring the Pipeline
+You can monitor the system in real-time using either the terminal or a browser:
+
+**Web Dashboard (Recommended)**:
+```bash
+uv run streamlit run services/monitor/app.py
+```
+
+**CLI Heartbeat**:
+```bash
+uv run python -m shared.monitor --live
 ```
 
 ---
