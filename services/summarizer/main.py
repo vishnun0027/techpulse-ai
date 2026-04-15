@@ -7,7 +7,7 @@ from loguru import logger
 from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt
 from shared.config import settings
 from shared.redis_client import ensure_group_exists, read_from_group, acknowledge_message
-from shared.db import save_article, log_telemetry
+from shared.db import save_article, log_telemetry, get_filter_config
 
 
 # ── Structured Output Schema ──────────────────────────────────────────────────
@@ -80,6 +80,17 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                 source=d.get("source", "")
             )
             
+            # Apply Topic Boost
+            final_score = result.score
+            try:
+                config = get_filter_config()
+                priority = [t.lower() for t in config.get("priority", [])]
+                if any(t.lower() in priority for t in result.topics):
+                    final_score = min(5.0, final_score + 1.5)
+                    logger.info(f"🚀 Priority Boost applied to {d.get('title')[:30]}... (+1.5)")
+            except Exception as e:
+                logger.warning(f"Failed to apply priority boost: {e}")
+            
             # Save to database (shared.db is sync, but small enough to run here)
             # Use run_in_executor if database latency is high
             success = save_article({
@@ -88,7 +99,7 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                 "source":     d.get("source"),
                 "content":    d.get("content"),
                 "summary":    result.summary,
-                "score":      result.score,
+                "score":      final_score,
                 "topics":     result.topics,
             })
             

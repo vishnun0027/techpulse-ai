@@ -11,12 +11,13 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 ## 🔥 Key Features
 
 - **🚀 Async Performance**: Refactored with `asyncio` to reduce GitHub Actions execution time by ~70%, saving valuable free-tier minutes.
-- **🧠 Zero-Cost Pro Summaries**: Powered by **Groq (Llama-3.1-8b-instant)**. Optimized for high throughput and reliable processing without hitting free-tier rate limits.
-- **🔍 Stateful Delivery**: Articles are tracked via an `is_delivered` flag to ensure each high-quality article is sent exactly once, even with multiple daily runs.
+- **🧠 Smart Topic Digest**: Articles are grouped into thematic clusters (GenAI, Dev Tools, ML) and delivered as a structured digest.
+- **🚀 Self-Service Config**: Manage RSS sources and topic filtering keywords directly from the Web Dashboard—no code changes required.
+- **📈 Topic Boosting**: Prioritize specific domains (like 'fine-tune' or 'ocr') with automatic score boosting (+1.5).
 - **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium Web Dashboard** (Streamlit) and a **Beautiful CLI Monitor** (Rich).
-- **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing. No message is lost if a database or network failure occurs.
-- **⚡ Telemetry Logging**: Every run tracks metrics (fetched vs. queued, success vs. failure) to provide full visibility into the system pipeline.
-- **proactive Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history for a fresh start.
+- **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing.
+- **⚡ Telemetry Logging**: Every run tracks metrics (fetched vs. queued, success vs. failure) to provide full visibility.
+- **proactive Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history.
 - **📡 Multi-Channel Delivery**: Formatted Block Kit payloads for Slack and Markdown-optimized chunks for Discord.
 
 ---
@@ -38,6 +39,8 @@ graph TD
     Summarizer -.->|Telemetry| TM
     Delivery -.->|Telemetry| TM
     UI[Web / CLI Monitor] -->|Query| TM
+    UI -->|Update| Config[(Dynamic Config)]
+    Collector -->|Read| Config
 ```
 
 ---
@@ -64,6 +67,14 @@ graph TD
 Clone the repo and install dependencies:
 ```bash
 uv sync
+```
+
+### 3. Database Setup (Crucial)
+Before running, you must apply the database migrations in your Supabase SQL Editor:
+1. Run `migrations/001_...` through `004_dynamic_config.sql`.
+2. Populate the default config:
+```bash
+uv run python scratch/migrate_config.py
 ```
 
 ### 3. Environment Config

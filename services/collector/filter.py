@@ -1,39 +1,28 @@
-# services/collector/filter.py
+from loguru import logger
+from shared.db import get_filter_config
+from functools import lru_cache
+import time
 
-ALLOWED_TOPICS = [
-    # AI & LLM
-    "ai", "llm", "gpt", "claude", "gemini", "openai", "anthropic",
-    "mistral", "llama", "agent", "rag", "embedding", "chatbot",
-    "transformer", "diffusion", "multimodal", "fine-tun",
+# Cache the config for 5 minutes during a run
+_config_cache = {"data": None, "expiry": 0}
 
-    # ML & Data
-    "machine learning", "deep learning", "neural", "pytorch",
-    "tensorflow", "dataset", "model", "training", "inference",
-    "benchmark", "computer vision", "nlp", "reinforcement",
-
-    # Dev & Tools
-    "python", "rust", "golang", "typescript", "open source",
-    "api", "framework", "library", "cli", "tool", "github",
-    "docker", "kubernetes", "fastapi", "database",
-
-    # Tech News
-    "startup", "research", "paper", "released", "launched",
-    "security", "vulnerability", "breach", "programming",
-]
-
-BLOCKED_TOPICS = [
-    "hiring", "job posting", "salary", "cryptocurrency",
-    "bitcoin", "nft", "forex", "trading signals",
-    "weight loss", "casino", "betting",
-]
-
+def get_cached_config():
+    now = time.time()
+    if _config_cache["data"] is None or now > _config_cache["expiry"]:
+        _config_cache["data"] = get_filter_config()
+        _config_cache["expiry"] = now + 300 # 5 min
+    return _config_cache["data"]
 
 def is_relevant(title: str, content: str = "") -> bool:
+    config = get_cached_config()
+    allowed = config.get("allowed", [])
+    blocked = config.get("blocked", [])
+
     text = (title + " " + content[:300]).lower()
 
     # Block irrelevant content first
-    if any(b in text for b in BLOCKED_TOPICS):
+    if any(b.lower() in text for b in blocked):
         return False
 
     # Must match at least one allowed topic
-    return any(t in text for t in ALLOWED_TOPICS)
+    return any(t.lower() in text for t in allowed)

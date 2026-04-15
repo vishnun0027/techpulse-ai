@@ -2,8 +2,7 @@ import time
 import feedparser
 from loguru import logger
 from shared.redis_client import check_seen, mark_seen, check_title_seen, mark_title_seen, push_to_stream
-from shared.db import log_telemetry
-from services.collector.sources import SOURCES
+from shared.db import log_telemetry, get_rss_sources
 from services.collector.filter import is_relevant
 
 
@@ -11,8 +10,9 @@ def collect():
     logger.info("Starting collection...")
     total   = 0
     skipped = 0
+    sources = get_rss_sources()
 
-    for src in SOURCES:
+    for src in sources:
         try:
             feed = feedparser.parse(src["url"])
             for entry in feed.entries[:15]:

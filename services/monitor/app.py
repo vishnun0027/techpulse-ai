@@ -57,7 +57,7 @@ st.markdown("Monitor your tech news pipeline in real-time.")
 
 # ── SIDEBAR ──────────────────────────────────────────────────────────────────
 st.sidebar.header("Navigation")
-action = st.sidebar.radio("View", ["Dashboard", "Telemetry Logs", "Database Explorer"])
+action = st.sidebar.radio("View", ["Dashboard", "Telemetry Logs", "Database Explorer", "⚙️ Settings"])
 
 if st.sidebar.button("Refresh Data"):
     st.cache_data.clear()
@@ -130,6 +130,75 @@ elif action == "Database Explorer":
                      width="stretch")
     else:
         st.info("No articles in database.")
+
+# ── SETTINGS ──────────────────────────────────────────────────────────────────
+elif action == "⚙️ Settings":
+    st.subheader("System Configuration")
+    
+    tab_sources, tab_topics = st.tabs(["📡 RSS Sources", "🔍 Topic Filters"])
+    
+    with tab_sources:
+        st.markdown("### Manage RSS Feeds")
+        
+        # Fetch current sources
+        sources_res = supabase.table("rss_sources").select("*").order("name").execute()
+        sources_df = pd.DataFrame(sources_res.data)
+        
+        if not sources_df.empty:
+            for _, row in sources_df.iterrows():
+                col_name, col_url, col_status, col_btn = st.columns([2, 5, 1, 1])
+                col_name.write(f"**{row['name']}**")
+                col_url.code(row['url'])
+                status_label = "✅ Active" if row['is_active'] else "❌ Inactive"
+                col_status.write(status_label)
+                if col_btn.button("🗑️", key=f"del_{row['id']}"):
+                    supabase.table("rss_sources").delete().eq("id", row['id']).execute()
+                    st.success(f"Deleted {row['name']}")
+                    st.rerun()
+        else:
+            st.info("No sources configured.")
+            
+        st.divider()
+        st.markdown("#### Add New Source")
+        with st.form("add_source"):
+            new_name = st.text_input("Name (e.g. HackerNews)")
+            new_url = st.text_input("RSS URL")
+            if st.form_submit_button("Add Source"):
+                if new_name and new_url:
+                    supabase.table("rss_sources").insert({"name": new_name, "url": new_url}).execute()
+                    st.success(f"Added {new_name}")
+                    st.rerun()
+                else:
+                    st.error("Please provide both name and URL.")
+
+    with tab_topics:
+        st.markdown("### Topic Filtering")
+        st.info("The Collector uses these keywords to keep your feed relevant. Separate multiple topics with commas.")
+        
+        # Fetch current config
+        config_res = supabase.table("app_config").select("value").eq("key", "topics").execute()
+        current_config = config_res.data[0]["value"] if config_res.data else {"allowed": [], "blocked": []}
+        
+        with st.form("edit_topics"):
+            allowed_str = st.text_area("Allowed Topics (Keywords for Relevance)", value=", ".join(current_config.get("allowed", [])))
+            blocked_str = st.text_area("Blocked Topics (Exclude entirely)", value=", ".join(current_config.get("blocked", [])))
+            priority_str = st.text_area("🚀 Priority Topics (Boost score by +1.5)", value=", ".join(current_config.get("priority", [])))
+            
+            if st.form_submit_button("Save Changes"):
+                new_allowed = [t.strip() for t in allowed_str.split(",") if t.strip()]
+                new_blocked = [t.strip() for t in blocked_str.split(",") if t.strip()]
+                new_priority = [t.strip() for t in priority_str.split(",") if t.strip()]
+                
+                supabase.table("app_config").upsert({
+                    "key": "topics",
+                    "value": {
+                        "allowed": new_allowed, 
+                        "blocked": new_blocked,
+                        "priority": new_priority
+                    }
+                }).execute()
+                st.success("Configuration updated / Boosting active!")
+                st.rerun()
 
 # ── FOOTER ───────────────────────────────────────────────────────────────────
 st.sidebar.divider()
