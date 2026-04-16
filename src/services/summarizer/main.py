@@ -124,8 +124,8 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
 async def summarize():
     ensure_group_exists(GROUP_NAME)
     
-    # Increase count to 30 for better throughput per run
-    messages = read_from_group(GROUP_NAME, CONSUMER_NAME, count=30)
+    # Increase count to 60 to drain the backlog faster
+    messages = read_from_group(GROUP_NAME, CONSUMER_NAME, count=60)
     if not messages:
         logger.info("No new messages in stream")
         return
