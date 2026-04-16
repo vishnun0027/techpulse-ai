@@ -24,6 +24,14 @@ jobs:
 
       - name: Deliver digest
         run: uv run python -m services.delivery.main
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: '{"text":"❌ *TechPulse AI* — Daily Digest delivery FAILED. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
     env:
       PYTHONPATH: src

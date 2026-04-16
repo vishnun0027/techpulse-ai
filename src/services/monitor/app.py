@@ -57,7 +57,7 @@ def get_redis_stats():
             lag     = d.get("lag", 0)
             pending = d.get("pending", 0)
         return lag, pending
-    except:
+    except Exception:
         return "N/A", "N/A"
 
 # ── HEADER ───────────────────────────────────────────────────────────────────

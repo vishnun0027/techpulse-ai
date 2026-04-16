@@ -20,7 +20,7 @@ def get_stats():
             d = {fields[i]: fields[i+1] for i in range(0, len(fields), 2)}
             lag   = d.get("lag", 0)
             stuck = d.get("pending", 0)
-    except:
+    except Exception:
         lag = stuck = "Error"
 
     # 2. Database Stats
@@ -43,7 +43,7 @@ def get_stats():
     # 3. Telemetry (Recent Runs)
     try:
         telemetry = supabase.table("telemetry").select("*").order("timestamp", desc=True).limit(5).execute().data or []
-    except:
+    except Exception:
         telemetry = []
 
     return lag, stuck, total, delivered, ready, telemetry

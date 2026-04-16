@@ -79,7 +79,7 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                 content=d.get("content", ""),
                 source=d.get("source", "")
             )
-            
+
             # Apply Topic Boost
             final_score = result.score
             try:
@@ -90,9 +90,8 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                     logger.info(f"🚀 Priority Boost applied to {d.get('title')[:30]}... (+1.5)")
             except Exception as e:
                 logger.warning(f"Failed to apply priority boost: {e}")
-            
-            # Save to database (shared.db is sync, but small enough to run here)
-            # Use run_in_executor if database latency is high
+
+            # Save to database
             success = save_article({
                 "title":      d.get("title"),
                 "source_url": d.get("source_url"),
@@ -102,23 +101,23 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                 "score":      final_score,
                 "topics":     result.topics,
             })
-            
+
             if success:
                 acknowledge_message(GROUP_NAME, msg_id)
                 logger.success(
                     f"[score={result.score}] [{result.topics}] "
                     f"{d.get('title', '')[:50]}"
                 )
-                return True
             else:
                 logger.error(f"Failed to save article {msg_id}")
-                return False
 
-            # Safe delay to maintain ~20 RPM (3s/req)
+            # Rate limit: ~20 RPM = 3s between requests (must be before return)
             await asyncio.sleep(3)
+            return bool(success)
 
         except Exception as e:
             logger.error(f"Summarize failed for message {msg_id}: {e}")
+            await asyncio.sleep(3)  # still wait on failure to avoid error storms
             return False
 
 async def summarize():

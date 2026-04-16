@@ -35,6 +35,8 @@ def slack_payload(grouped_articles: dict) -> dict:
         "text": {"type": "plain_text", "text": "🚀 TechPulse Smart Digest"}
     }, {"type": "divider"}]
 
+    total_count = sum(len(v) for v in grouped_articles.values())  # fix: total across all themes
+
     for theme, articles in grouped_articles.items():
         blocks.append({
             "type": "section",
@@ -45,7 +47,7 @@ def slack_payload(grouped_articles: dict) -> dict:
                 "type": "section",
                 "text": {"type": "mrkdwn",
                          "text": (f"• <{a['source_url']}|{a['title']}>\n"
-                                  f"  _{a['summary']}_")},
+                                   f"  _{a['summary']}_")},
                 "accessory": {
                     "type": "button",
                     "text": {"type": "plain_text", "text": f"⭐ {a['score']}"},
@@ -61,10 +63,10 @@ def slack_payload(grouped_articles: dict) -> dict:
             "type": "context",
             "elements": [{
                 "type": "mrkdwn",
-                "text": f"📊 *System Health* — {len(articles)} delivered | {pending} pending in queue"
+                "text": f"📊 *System Health* — {total_count} delivered | {pending} pending in queue"
             }]
         })
-    except:
+    except Exception:
         pass
 
     return {"blocks": blocks}
@@ -73,6 +75,7 @@ def discord_payload_chunks(grouped_articles: dict) -> list[dict]:
     """Split articles into multiple Discord messages if needed."""
     chunks = []
     current = "# 🚀 TechPulse Smart Digest\n\n"
+    total_count = sum(len(v) for v in grouped_articles.values())  # fix: total across all themes
 
     for theme, articles in grouped_articles.items():
         theme_header = f"## {theme}\n"
@@ -101,14 +104,14 @@ def discord_payload_chunks(grouped_articles: dict) -> list[dict]:
     # Add Health Stats Footer
     try:
         pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
-        footer = f"\n---\n📊 **System Health**: {len(grouped_articles)} themes active | {pending} pending"
+        footer = f"\n---\n📊 **System Health**: {total_count} articles | {len(grouped_articles)} themes active | {pending} pending"
         
         # Add to last chunk if possible, or new chunk
         if len(chunks[-1]["content"]) + len(footer) < 1950:
             chunks[-1]["content"] += footer
         else:
             chunks.append({"content": footer})
-    except:
+    except Exception:
         pass
 
     return chunks

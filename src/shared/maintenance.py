@@ -17,8 +17,8 @@ def clear_redis():
     try:
         redis.execute(command=["XGROUP", "DESTROY", STREAM_RAW, "summarizer-group"])
         logger.debug("Destroyed consumer group: summarizer-group")
-    except:
-        pass # Group might not exist
+    except Exception:
+        pass  # Group might not exist if it was never created
     
     # 3. Clear deduplication keys (seen and title)
     keys = redis.keys("seen:*") + redis.keys("title:*")
