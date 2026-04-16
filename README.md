@@ -93,11 +93,11 @@ DEDUP_TTL_DAYS=7
 ```
 
 ### 4. Running Locally
-You can run the full pipeline with a single command:
+Set `PYTHONPATH=src` and run the pipeline:
 ```bash
-uv run python -m services.collector.main && \
-uv run python -m services.summarizer.main && \
-uv run python -m services.delivery.main
+PYTHONPATH=src uv run python -m services.collector.main && \
+PYTHONPATH=src uv run python -m services.summarizer.main && \
+PYTHONPATH=src uv run python -m services.delivery.main
 ```
 
 ### 5. Monitoring the Pipeline
@@ -105,12 +105,12 @@ You can monitor the system in real-time using either the terminal or a browser:
 
 **Web Dashboard (Recommended)**:
 ```bash
-uv run streamlit run services/monitor/app.py
+PYTHONPATH=src uv run streamlit run src/services/monitor/app.py
 ```
 
 **CLI Heartbeat**:
 ```bash
-uv run python -m shared.monitor --live
+PYTHONPATH=src uv run python -m shared.monitor --live
 ```
 
 ---
@@ -120,13 +120,13 @@ uv run python -m shared.monitor --live
 ### Master Storage Reset
 To wipe all Redis streams, deduplication data, and database history:
 ```bash
-uv run python -m shared.maintenance reset --confirm
+PYTHONPATH=src uv run python -m shared.maintenance reset --confirm
 ```
 
-### End-to-End Test
-To verify the entire pipeline (injection -> summary -> delivery) without waiting for fresh news:
+### Standardized Testing
+To verify the entire logic and pipeline using `pytest`:
 ```bash
-PYTHONPATH=. uv run python scratch/test_e2e.py
+PYTHONPATH=src uv run pytest
 ```
 
 ---
