@@ -45,11 +45,20 @@ def fetch_article_counts():
     
     return total, delivered, ready
 
-def get_redis_pending():
+def get_redis_stats():
     try:
-        return redis.execute(command=["XLEN", STREAM_RAW]) or 0
+        # True lag: messages not yet read by the consumer group
+        info = redis.execute(command=["XINFO", "GROUPS", STREAM_RAW])
+        lag     = 0
+        pending = 0
+        if info:
+            fields = info[0]
+            d = {fields[i]: fields[i+1] for i in range(0, len(fields), 2)}
+            lag     = d.get("lag", 0)
+            pending = d.get("pending", 0)
+        return lag, pending
     except:
-        return "N/A"
+        return "N/A", "N/A"
 
 # ── HEADER ───────────────────────────────────────────────────────────────────
 st.title("🤖 TechPulse AI — System Pulse")
@@ -66,14 +75,15 @@ if st.sidebar.button("Refresh Data"):
 # ── DASHBOARD ────────────────────────────────────────────────────────────────
 if action == "Dashboard":
     total, delivered, ready = fetch_article_counts()
-    pending = get_redis_pending()
+    lag, stuck = get_redis_stats()
     
     # 1. Metrics Row
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Pending in Stream", pending, help="Articles waiting to be summarized")
-    col2.metric("Total in DB", total, help="Lifetime processed articles")
-    col3.metric("Total Delivered", delivered, help="Successfully sent to Slack/Discord")
-    col4.metric("Ready (Top 24h)", ready, help="High-score articles pending delivery")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Unread in Queue", lag, help="Articles waiting to be processed by Summarizer")
+    col2.metric("Stuck (Unacked)", stuck, help="Messages read but not yet acknowledged (retry pending)")
+    col3.metric("Total in DB", total, help="Lifetime processed articles")
+    col4.metric("Total Delivered", delivered, help="Successfully sent to Slack/Discord")
+    col5.metric("Ready (Top 24h)", ready, help="High-score articles pending delivery")
     
     st.divider()
     

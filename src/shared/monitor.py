@@ -11,11 +11,17 @@ from datetime import datetime, timezone, timedelta
 console = Console()
 
 def get_stats():
-    # 1. Redis Stats
+    # 1. Redis Stats — show real consumer group lag, not XLEN
     try:
-        pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
+        info = redis.execute(command=["XINFO", "GROUPS", STREAM_RAW])
+        lag = stuck = 0
+        if info:
+            fields = info[0]
+            d = {fields[i]: fields[i+1] for i in range(0, len(fields), 2)}
+            lag   = d.get("lag", 0)
+            stuck = d.get("pending", 0)
     except:
-        pending = "Error"
+        lag = stuck = "Error"
 
     # 2. Database Stats
     try:
@@ -40,10 +46,10 @@ def get_stats():
     except:
         telemetry = []
 
-    return pending, total, delivered, ready, telemetry
+    return lag, stuck, total, delivered, ready, telemetry
 
 def generate_layout(stats):
-    pending, total, delivered, ready, telemetry = stats
+    lag, stuck, total, delivered, ready, telemetry = stats
     
     layout = Layout()
     layout.split_column(
@@ -66,7 +72,8 @@ def generate_layout(stats):
     stats_table.add_column("Metric", style="magenta")
     stats_table.add_column("Value", style="bold green")
     
-    stats_table.add_row("Pending in Redis (Raw)", str(pending))
+    stats_table.add_row("Unread in Queue", str(lag))
+    stats_table.add_row("Stuck (Unacknowledged)", str(stuck))
     stats_table.add_row("Total in Database", str(total))
     stats_table.add_row("Total Delivered", str(delivered))
     stats_table.add_row("Ready for Delivery (Top 24h)", str(ready))
