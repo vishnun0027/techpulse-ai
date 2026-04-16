@@ -32,7 +32,7 @@ def collect():
                     push_to_stream({
                         "title":      title,
                         "source_url": url,
-                        "source":     src["source"],
+                        "source":     src.get("name", "Unknown"),
                         "content":    content,
                     })
                     mark_seen(url)
@@ -43,11 +43,11 @@ def collect():
                 except Exception as e:
                     logger.error(f"Failed to push {url} to stream: {e}")
 
-            logger.info(f"[{src['source']}] done")
+            logger.info(f"[{src.get('name', 'Unknown')}] done")
             time.sleep(1)
 
         except Exception as e:
-            logger.error(f"[{src['source']}] failed: {e}")
+            logger.error(f"[{src.get('name', 'Unknown')}] failed: {e}")
 
     logger.success(
         f"Collection complete — {total} queued, {skipped} skipped"
