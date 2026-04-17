@@ -75,8 +75,8 @@ uv sync
 
 ### 3. Database Setup (Crucial)
 Before running, you must apply the database migrations in your Supabase SQL Editor:
-1. Run `migrations/001_...` through `004_dynamic_config.sql`.
-2. Populate the default config:
+1. Run migrations `001_...` through `006_rls_security.sql`.
+2. (Optional) Populate default config if not using the Dashboard/CLI:
 ```bash
 uv run python scratch/migrate_config.py
 ```
@@ -84,14 +84,13 @@ uv run python scratch/migrate_config.py
 ### 3. Environment Config
 Create a `.env` file from the following template:
 ```env
+SUPABASE_URL=your_url
+SUPABASE_KEY=your_service_role_key      # Required for Operator CLI & Services
+SUPABASE_ANON_KEY=your_anon_public_key  # Required for User CLI
 GROQ_API_KEY=your_key
 GROQ_MODEL=llama-3.1-8b-instant
-SUPABASE_URL=your_url
-SUPABASE_KEY=your_key
 UPSTASH_REDIS_REST_URL=your_url
 UPSTASH_REDIS_REST_TOKEN=your_token
-SLACK_WEBHOOK_URL=your_url
-DISCORD_WEBHOOK_URL=your_url
 TOP_N_ARTICLES=10
 DEDUP_TTL_DAYS=7
 ```
