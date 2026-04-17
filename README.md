@@ -12,12 +12,13 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 
 - **🚀 Async Performance**: Refactored with `asyncio` to reduce GitHub Actions execution time by ~70%, saving valuable free-tier minutes.
 - **🧠 Smart Topic Digest**: Articles are grouped into thematic clusters (GenAI, Dev Tools, ML) and delivered as a structured digest.
-- **🚀 Self-Service Config**: Manage RSS sources and topic filtering keywords directly from the Web Dashboard—no code changes required.
+- **🚀 Self-Service Dashboard**: Manage RSS sources and topic filtering keywords directly from the **React-based Web Dashboard**—no code changes required.
 - **📈 Topic Boosting**: Prioritize specific domains (like 'fine-tune' or 'ocr') with automatic score boosting (+1.5).
-- **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium Web Dashboard** (Streamlit) and a **Beautiful CLI Monitor** (Rich).
+- **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium React Dashboard** and a **Beautiful CLI Monitor** (Rich).
 - **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing.
 - **⚡ Telemetry Logging**: Every run tracks metrics (fetched vs. queued, success vs. failure) to provide full visibility.
-- **proactive Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history.
+- **🎛️ Dual CLI System**: Professional command-line tools for both **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
+- ** pro-active Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history.
 - **📡 Multi-Channel Delivery**: Formatted Block Kit payloads for Slack and Markdown-optimized chunks for Discord.
 
 ---
@@ -38,10 +39,13 @@ graph TD
     Collector -.->|Telemetry| TM[(Telemetry Table)]
     Summarizer -.->|Telemetry| TM
     Delivery -.->|Telemetry| TM
-    UI[Web / CLI Monitor] -->|Query| TM
-    UI -->|Update| Config[(Dynamic Config)]
-    Collector -->|Read| Config
-```
+    
+    UI[React Dashboard] -->|Query| DB
+    UI -->|Update| DB
+    
+    CLI_USER[User CLI] -->|RLS-Scoped| DB
+    CLI_OPS[Operator CLI] -->|Service-Role| DB
+
 
 ---
 
@@ -93,24 +97,51 @@ DEDUP_TTL_DAYS=7
 ```
 
 ### 4. Running Locally
-Set `PYTHONPATH=src` and run the pipeline:
+
+**Web Dashboard**:
 ```bash
-PYTHONPATH=src uv run python -m services.collector.main && \
-PYTHONPATH=src uv run python -m services.summarizer.main && \
-PYTHONPATH=src uv run python -m services.delivery.main
+make web-dev
 ```
 
-### 5. Monitoring the Pipeline
-You can monitor the system in real-time using either the terminal or a browser:
-
-**Web Dashboard (Recommended)**:
+**System Pipeline (Operator)**:
 ```bash
-PYTHONPATH=src uv run streamlit run src/services/monitor/app.py
+make pipeline
+# OR
+uv run techpulse-ops run all
 ```
 
-**CLI Heartbeat**:
+---
+
+## ⚡ Command Line Power Tools
+
+TechPulse comes with two dedicated CLI tools.
+
+### 🛠️ Operator CLI (`techpulse-ops`)
+For system-level management and automation (bypasses RLS).
 ```bash
-PYTHONPATH=src uv run python -m shared.monitor --live
+# Run the pipeline
+uv run techpulse-ops run collect
+uv run techpulse-ops run summarize
+
+# Monitor system health
+uv run techpulse-ops monitor
+
+# List all tenants
+uv run techpulse-ops tenants list
+```
+
+### ⚡ User CLI (`techpulse`)
+For personal management of your own feeds and filters (enforces RLS).
+```bash
+# Login to your account
+uv run techpulse login
+
+# Manage your sources
+uv run techpulse sources list
+uv run techpulse sources import my_feeds.txt
+
+# Inspect status
+uv run techpulse status
 ```
 
 ---
