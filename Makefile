@@ -19,8 +19,17 @@ pipeline: collect summarize deliver
 monitor:
 	PYTHONPATH=$(PYTHONPATH) uv run python -m shared.monitor --live
 
-dashboard:
-	PYTHONPATH=$(PYTHONPATH) uv run streamlit run src/services/monitor/app.py
+# ── FRONTEND DASHBOARD ────────────────────────────────────────────────────────
+
+web-dev:
+	@echo "Starting React dashboard..."
+	cd web && npm run dev
+
+web-build:
+	@echo "Building React dashboard for production..."
+	cd web && npm run build
+
+
 
 ## Testing
 test:

@@ -22,25 +22,28 @@ _DEFAULT_BLOCKED = [
     "weight loss", "casino", "betting",
 ]
 
-# Cache the config for 5 minutes during a run
-_config_cache = {"data": None, "expiry": 0}
+# Cache the config for 5 minutes during a run per user
+_config_cache = {}
 
-def get_cached_config():
+def get_cached_config(user_id: str | None = None):
     now = time.time()
-    if _config_cache["data"] is None or now > _config_cache["expiry"]:
-        raw = get_filter_config()
+    cache_key = user_id or "global"
+    
+    if cache_key not in _config_cache or now > _config_cache[cache_key]["expiry"]:
+        raw = get_filter_config(user_id)
         # Fallback to hardcoded defaults if DB returns empty lists
         if not raw.get("allowed"):
-            logger.warning("Filter config not found in DB, using hardcoded defaults.")
+            logger.warning(f"Filter config not found in DB for {cache_key}, using hardcoded defaults.")
             raw["allowed"] = _DEFAULT_ALLOWED
         if not raw.get("blocked"):
             raw["blocked"] = _DEFAULT_BLOCKED
-        _config_cache["data"] = raw
-        _config_cache["expiry"] = now + 300  # 5 min cache
-    return _config_cache["data"]
+            
+        _config_cache[cache_key] = {"data": raw, "expiry": now + 300}
+        
+    return _config_cache[cache_key]["data"]
 
-def is_relevant(title: str, content: str = "") -> bool:
-    config = get_cached_config()
+def is_relevant(title: str, content: str = "", user_id: str | None = None) -> bool:
+    config = get_cached_config(user_id)
     allowed = config.get("allowed", [])
     blocked = config.get("blocked", [])
 

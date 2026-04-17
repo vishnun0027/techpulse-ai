@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     supabase_key: str
     upstash_redis_rest_url: str
     upstash_redis_rest_token: str
-    slack_webhook_url: str = ""
-    discord_webhook_url: str = ""
     top_n_articles: int = 10
     dedup_ttl_days: int = 7
 

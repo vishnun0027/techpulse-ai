@@ -1,7 +1,6 @@
 import httpx
 from loguru import logger
-from shared.config import settings
-from shared.db import get_top_articles, mark_as_delivered, log_telemetry
+from shared.db import get_top_articles, mark_as_delivered, log_telemetry, get_tenant_profiles
 from shared.redis_client import redis, STREAM_RAW
 
 THEMES = {
@@ -35,7 +34,7 @@ def slack_payload(grouped_articles: dict) -> dict:
         "text": {"type": "plain_text", "text": "🚀 TechPulse Smart Digest"}
     }, {"type": "divider"}]
 
-    total_count = sum(len(v) for v in grouped_articles.values())  # fix: total across all themes
+    total_count = sum(len(v) for v in grouped_articles.values())
 
     for theme, articles in grouped_articles.items():
         blocks.append({
@@ -72,10 +71,9 @@ def slack_payload(grouped_articles: dict) -> dict:
     return {"blocks": blocks}
 
 def discord_payload_chunks(grouped_articles: dict) -> list[dict]:
-    """Split articles into multiple Discord messages if needed."""
     chunks = []
     current = "# 🚀 TechPulse Smart Digest\n\n"
-    total_count = sum(len(v) for v in grouped_articles.values())  # fix: total across all themes
+    total_count = sum(len(v) for v in grouped_articles.values())
 
     for theme, articles in grouped_articles.items():
         theme_header = f"## {theme}\n"
@@ -90,23 +88,19 @@ def discord_payload_chunks(grouped_articles: dict) -> list[dict]:
                 f"**{i}. [{a['title']}](<{a['source_url']}>)** (Score: {a['score']})\n"
                 f"> {a['summary']}\n\n"
             )
-            # If adding this entry exceeds Discord limit, start new chunk
             if len(current) + len(entry) > 1900:
                 chunks.append({"content": current})
-                current = entry  # start fresh chunk
+                current = entry
             else:
                 current += entry
 
-    # Append the final remaining content
     if current:
         chunks.append({"content": current})
 
-    # Add Health Stats Footer
     try:
         pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
         footer = f"\n---\n📊 **System Health**: {total_count} articles | {len(grouped_articles)} themes active | {pending} pending"
         
-        # Add to last chunk if possible, or new chunk
         if len(chunks[-1]["content"]) + len(footer) < 1950:
             chunks[-1]["content"] += footer
         else:
@@ -118,46 +112,61 @@ def discord_payload_chunks(grouped_articles: dict) -> list[dict]:
 
 
 def deliver():
-    articles = get_top_articles()
-    if not articles:
+    from collections import defaultdict
+    
+    all_articles = get_top_articles()
+    if not all_articles:
         logger.warning("No articles ready to send")
         return
 
-    grouped = group_by_themes(articles)
-    total_to_send = sum(len(v) for v in grouped.values())
-    
-    logger.info(f"Delivering {total_to_send} articles across {len(grouped)} themes...")
+    articles_by_user = defaultdict(list)
+    for a in all_articles:
+        user_id = a.get("user_id")
+        if user_id:
+            articles_by_user[user_id].append(a)
 
-    # Slack — single message, Block Kit handles long content fine
-    if settings.slack_webhook_url:
-        try:
-            r = httpx.post(settings.slack_webhook_url,
-                           json=slack_payload(grouped), timeout=10)
-            r.raise_for_status()
-            logger.success("Slack ✅")
-        except Exception as e:
-            logger.error(f"Slack failed: {e}")
+    tenant_profiles = {p["user_id"]: p for p in get_tenant_profiles()}
+    total_delivered = 0
 
-    # Discord — split into chunks to respect 2000 char limit
-    if settings.discord_webhook_url:
-        chunks = discord_payload_chunks(grouped)
-        for i, chunk in enumerate(chunks):
+    for user_id, articles in articles_by_user.items():
+        profile = tenant_profiles.get(user_id)
+        if not profile:
+            logger.warning(f"User {user_id} has articles but no tenant profile, skipping.")
+            continue
+
+        grouped = group_by_themes(articles)
+        total_to_send = sum(len(v) for v in grouped.values())
+        
+        logger.info(f"Delivering {total_to_send} articles across {len(grouped)} themes to user {user_id}...")
+
+        slack_url = profile.get("slack_webhook_url")
+        discord_url = profile.get("discord_webhook_url")
+
+        if slack_url:
             try:
-                r = httpx.post(settings.discord_webhook_url,
-                               json=chunk, timeout=10)
+                r = httpx.post(slack_url, json=slack_payload(grouped), timeout=10)
                 r.raise_for_status()
-                logger.success(f"Discord chunk {i+1}/{len(chunks)} ✅")
+                logger.success(f"Slack ✅ (User {user_id})")
             except Exception as e:
-                logger.error(f"Discord chunk {i+1} failed: {e}")
+                logger.error(f"Slack failed for {user_id}: {e}")
 
-    # Mark as delivered
-    delivered_urls = [a["source_url"] for theme_list in grouped.values() for a in theme_list]
-    mark_as_delivered(delivered_urls)
+        if discord_url:
+            chunks = discord_payload_chunks(grouped)
+            for i, chunk in enumerate(chunks):
+                try:
+                    r = httpx.post(discord_url, json=chunk, timeout=10)
+                    r.raise_for_status()
+                    logger.success(f"Discord chunk {i+1}/{len(chunks)} ✅ (User {user_id})")
+                except Exception as e:
+                    logger.error(f"Discord chunk {i+1} failed for {user_id}: {e}")
 
-    # Record telemetry
+        delivered_urls = [a["source_url"] for theme_list in grouped.values() for a in theme_list]
+        mark_as_delivered(delivered_urls, user_id)
+        total_delivered += len(delivered_urls)
+
     log_telemetry("delivery", {
-        "count": len(delivered_urls),
-        "themes": list(grouped.keys())
+        "count": total_delivered,
+        "users": len(articles_by_user)
     })
 
 if __name__ == "__main__":

@@ -73,6 +73,8 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
     async with semaphore:
         d = msg["data"]
         msg_id = msg["id"]
+        user_id = d.get("user_id")
+        
         try:
             result = await call_groq_async(
                 title=d.get("title", ""),
@@ -83,7 +85,7 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
             # Apply Topic Boost
             final_score = result.score
             try:
-                config = get_filter_config()
+                config = get_filter_config(user_id)
                 priority = [t.lower() for t in config.get("priority", [])]
                 if any(t.lower() in priority for t in result.topics):
                     final_score = min(5.0, final_score + 1.5)
@@ -93,6 +95,7 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
 
             # Save to database
             success = save_article({
+                "user_id":    user_id,
                 "title":      d.get("title"),
                 "source_url": d.get("source_url"),
                 "source":     d.get("source"),

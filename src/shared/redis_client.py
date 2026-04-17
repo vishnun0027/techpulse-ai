@@ -11,26 +11,25 @@ redis = Redis(
 STREAM_RAW = "stream:raw"
 DEDUP_TTL  = settings.dedup_ttl_days * 86400
 
-def check_seen(url: str) -> bool:
-    """True if the URL has already been processed recently."""
+def check_seen(url: str, user_id: str) -> bool:
+    """True if the URL has already been processed recently by this user."""
     fp  = hashlib.md5(url.encode()).hexdigest()
-    return bool(redis.exists(f"seen:{fp}"))
+    return bool(redis.exists(f"seen:{user_id}:{fp}"))
 
-def mark_seen(url: str):
-    """Mark URL as processed with a TTL."""
+def mark_seen(url: str, user_id: str):
+    """Mark URL as processed with a TTL for this user."""
     fp  = hashlib.md5(url.encode()).hexdigest()
-    redis.setex(f"seen:{fp}", DEDUP_TTL, 1)
+    redis.setex(f"seen:{user_id}:{fp}", DEDUP_TTL, 1)
 
-def check_title_seen(title: str) -> bool:
-    """True if a similar title has already been processed."""
-    # Simplified: normalize title and hash it
+def check_title_seen(title: str, user_id: str) -> bool:
+    """True if a similar title has already been processed by this user."""
     slug = "".join(e for e in title.lower() if e.isalnum())[:100]
-    return bool(redis.exists(f"title:{slug}"))
+    return bool(redis.exists(f"title:{user_id}:{slug}"))
 
-def mark_title_seen(title: str):
-    """Mark a title as processed."""
+def mark_title_seen(title: str, user_id: str):
+    """Mark a title as processed for this user."""
     slug = "".join(e for e in title.lower() if e.isalnum())[:100]
-    redis.setex(f"title:{slug}", DEDUP_TTL, 1)
+    redis.setex(f"title:{user_id}:{slug}", DEDUP_TTL, 1)
 
 
 def push_to_stream(data: dict) -> str:
