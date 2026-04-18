@@ -45,7 +45,7 @@ graph TD
     
     CLI_USER[User CLI] -->|RLS-Scoped| DB
     CLI_OPS[Operator CLI] -->|Service-Role| DB
-
+```
 
 ---
 
