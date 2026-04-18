@@ -38,6 +38,11 @@ def get_cached_config(user_id: str | None = None):
         if not raw.get("blocked"):
             raw["blocked"] = _DEFAULT_BLOCKED
             
+        # Robustness: strip any internal quotes added by mistake (e.g. '"ai"' -> 'ai')
+        raw["allowed"] = [t.strip("\"").strip("'") for t in raw["allowed"]]
+        raw["blocked"] = [t.strip("\"").strip("'") for t in raw["blocked"]]
+        raw["priority"] = [t.strip("\"").strip("'") for t in raw.get("priority", [])]
+
         _config_cache[cache_key] = {"data": raw, "expiry": now + 300}
         
     return _config_cache[cache_key]["data"]

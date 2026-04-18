@@ -38,9 +38,8 @@ def _get_db():
 def run_collect():
     """Fetch new articles from all RSS sources into Redis queue."""
     console.rule("[bold blue]Collector")
-    import asyncio
-    from services.collector.main import run as collector_run
-    asyncio.run(collector_run())
+    from services.collector.main import collect
+    collect()
     rprint("[green]✓ Collector finished.[/green]")
 
 
@@ -49,8 +48,8 @@ def run_summarize():
     """Summarize articles from Redis queue using the AI model."""
     console.rule("[bold blue]Summarizer")
     import asyncio
-    from services.summarizer.main import run as summarizer_run
-    asyncio.run(summarizer_run())
+    from services.summarizer.main import summarize
+    asyncio.run(summarize())
     rprint("[green]✓ Summarizer finished.[/green]")
 
 
@@ -58,9 +57,8 @@ def run_summarize():
 def run_deliver():
     """Deliver high-score articles to all tenant webhooks."""
     console.rule("[bold blue]Delivery")
-    import asyncio
-    from services.delivery.main import run as delivery_run
-    asyncio.run(delivery_run())
+    from services.delivery.main import deliver
+    deliver()
     rprint("[green]✓ Delivery finished.[/green]")
 
 
