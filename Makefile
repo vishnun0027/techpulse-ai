@@ -51,17 +51,6 @@ user-sources:
 monitor:
 	PYTHONPATH=$(PYTHONPATH) uv run python -m shared.monitor --live
 
-# ── FRONTEND DASHBOARD ────────────────────────────────────────────────────────
-
-web-dev:
-	@echo "Starting React dashboard..."
-	cd web && npm run dev
-
-web-build:
-	@echo "Building React dashboard for production..."
-	cd web && npm run build
-
-
 
 ## Testing
 test:
