@@ -240,9 +240,15 @@ export default function SettingsView({ session }) {
               <div key={s.id} className="source-row">
                 {editId === s.id ? (
                   /* ── Edit mode ── */
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Name" style={{ marginBottom: 0 }} />
-                    <input value={editUrl}  onChange={e => setEditUrl(e.target.value)}  placeholder="URL"  style={{ marginBottom: 0 }} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingRight: '1rem' }}>
+                    <div>
+                      <label className="field-label" style={{ fontSize: '0.7rem' }}>Feed Name</label>
+                      <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. OpenAI Blog" style={{ marginBottom: 0 }} />
+                    </div>
+                    <div>
+                      <label className="field-label" style={{ fontSize: '0.7rem' }}>RSS URL</label>
+                      <input value={editUrl}  onChange={e => setEditUrl(e.target.value)}  placeholder="https://..."  style={{ marginBottom: 0 }} />
+                    </div>
                   </div>
                 ) : (
                   /* ── View mode ── */
@@ -279,26 +285,32 @@ export default function SettingsView({ session }) {
 
           {/* Add single source */}
           <form onSubmit={addSource} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Source name (e.g. Hugging Face)" style={{ flex: '1 1 180px', marginBottom: 0 }} />
-              <input value={newUrl}  onChange={e => setNewUrl(e.target.value)}  placeholder="https://..." style={{ flex: '2 1 260px', marginBottom: 0 }} />
-              <button type="submit" style={{ flexShrink: 0, padding: '0.75rem 1rem' }}>
-                <Plus size={18} /> Add
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label className="field-label">Feed Name</label>
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Hugging Face" style={{ marginBottom: 0 }} />
+              </div>
+              <div style={{ flex: '2 1 280px' }}>
+                <label className="field-label">RSS URL</label>
+                <input value={newUrl}  onChange={e => setNewUrl(e.target.value)}  placeholder="https://..." style={{ marginBottom: 0 }} />
+              </div>
+              <button type="submit" style={{ flexShrink: 0, padding: '0.75rem 1.5rem', marginBottom: '0' }}>
+                <Plus size={18} /> Add Source
               </button>
             </div>
           </form>
 
           {/* Bulk import via file */}
           <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1rem' }}>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-              📄 <strong style={{ color: 'var(--text-primary)' }}>Bulk import</strong> — upload a <code>.txt</code> file. One entry per line:
-              <code style={{ display: 'block', marginTop: '0.25rem', padding: '0.4rem 0.6rem', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '0.75rem' }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              📄 <strong style={{ color: 'var(--text-primary)' }}>Bulk import via file</strong> — upload a <code>.txt</code> file to import hundreds of feeds at once. Format one entry per line:
+              <code style={{ display: 'block', marginTop: '0.5rem', padding: '0.75rem 1rem', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid var(--card-border)' }}>
                 Feed Name | https://example.com/feed<br />https://plainurl.com/rss
               </code>
             </p>
             <input ref={fileInputRef} type="file" accept=".txt,.csv" onChange={handleFileUpload} style={{ display: 'none' }} />
-            <button type="button" className="secondary" onClick={() => fileInputRef.current?.click()} style={{ width: '100%', justifyContent: 'center' }}>
-              <Upload size={16} /> Import from File
+            <button type="button" className="secondary" onClick={() => fileInputRef.current?.click()} style={{ width: 'auto' }}>
+              <Upload size={16} /> Upload .txt File
             </button>
           </div>
         </Section>
@@ -333,8 +345,8 @@ export default function SettingsView({ session }) {
             </div>
           </div>
 
-          <button onClick={saveTopics} style={{ width: '100%', justifyContent: 'center' }}>
-            Update Processing Rules
+          <button onClick={saveTopics} style={{ marginTop: '1rem' }}>
+            Save Processing Rules
           </button>
         </Section>
 
@@ -371,8 +383,8 @@ export default function SettingsView({ session }) {
             <input value={webhooks.discord} onChange={e => setWebhooks({ ...webhooks, discord: e.target.value })} placeholder="https://discord.com/api/webhooks/..." />
           </div>
 
-          <button onClick={saveWebhooks} style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
-            Save Endpoints
+          <button onClick={saveWebhooks} style={{ marginTop: '1.5rem' }}>
+            Save Webhook Endpoints
           </button>
         </Section>
 

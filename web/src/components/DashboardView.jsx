@@ -67,25 +67,33 @@ export default function DashboardView({ session }) {
       </div>
 
       <div className="metrics-grid">
-        <div className="metric-card glass-panel">
+        <div className="metric-card glass-panel hoverable">
           <div className="metric-label">Total Articles Scored</div>
           <div className="metric-value">{loading ? '...' : stats.total}</div>
         </div>
-        <div className="metric-card glass-panel">
+        <div className="metric-card glass-panel hoverable">
           <div className="metric-label">Successfully Delivered</div>
-          <div className="metric-value" style={{ color: '#10b981' }}>{loading ? '...' : stats.delivered}</div>
+          <div className="metric-value" style={{ color: 'var(--semantic-success)' }}>{loading ? '...' : stats.delivered}</div>
         </div>
-        <div className="metric-card glass-panel">
+        <div className="metric-card glass-panel hoverable">
           <div className="metric-label">High-Score Pending</div>
-          <div className="metric-value" style={{ color: '#f59e0b' }}>{loading ? '...' : stats.ready}</div>
+          <div className="metric-value" style={{ color: 'var(--semantic-warning)' }}>{loading ? '...' : stats.ready}</div>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem', marginBottom: '2rem' }}>
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', fontWeight: 600 }}>Delivery Velocity</h2>
-          <div style={{ height: '300px', width: '100%' }}>
-            <ResponsiveContainer>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Delivery Velocity</h2>
+            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.05)', padding: '0.4rem 0.8rem', borderRadius: '6px' }}>
+              Last 7 Days ▾
+            </div>
+          </div>
+          <div style={{ height: '300px', width: '100%', position: 'relative' }}>
+            {/* Subtle glow behind chart */}
+            <div style={{ position: 'absolute', top: '10%', left: '10%', right: '10%', bottom: '10%', background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)', filter: 'blur(40px)', zIndex: 0, pointerEvents: 'none' }} />
+            
+            <ResponsiveContainer zIndex={1}>
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="name" stroke="#94a3b8" />
@@ -124,32 +132,35 @@ export default function DashboardView({ session }) {
                   </td>
                   <td>{a.source}</td>
                   <td style={{ maxWidth: '400px' }}>
-                    <a href={a.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>
+                    <a href={a.source_url} target="_blank" rel="noreferrer" className="article-title-link">
                       {a.title}
                     </a>
                   </td>
                   <td>
-                    <span style={{ 
-                      padding: '0.25rem 0.5rem', 
-                      borderRadius: '4px', 
-                      background: a.score >= 4 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)',
-                      color: a.score >= 4 ? '#10b981' : 'inherit'
-                    }}>
-                      {a.score.toFixed(1)}
+                    <span className={`badge ${a.score >= 4 ? 'success' : 'info'}`}>
+                      ⭐ {a.score.toFixed(1)}
                     </span>
                   </td>
                   <td>
                     {a.is_delivered ? 
-                      <span style={{ color: '#10b981', fontSize: '0.875rem' }}>Delivered</span> : 
-                      <span style={{ color: '#f59e0b', fontSize: '0.875rem' }}>Pending</span>
+                      <span className="badge success">Delivered</span> : 
+                      <span className="badge warning">Pending</span>
                     }
                   </td>
                 </tr>
               ))}
               {articles.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                    No intelligence gathered yet. Add some RSS sources!
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)' }}>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                      </svg>
+                      <div>
+                        <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>No intelligence yet</p>
+                        <p style={{ fontSize: '0.875rem' }}>Add some RSS sources in settings to get started.</p>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               )}
