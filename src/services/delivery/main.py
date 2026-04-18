@@ -142,6 +142,10 @@ def deliver():
         slack_url = profile.get("slack_webhook_url")
         discord_url = profile.get("discord_webhook_url")
 
+        if not slack_url and not discord_url:
+            logger.info(f"User {user_id} has no webhooks configured, keeping articles pending.")
+            continue
+
         if slack_url:
             try:
                 r = httpx.post(slack_url, json=slack_payload(grouped), timeout=10)

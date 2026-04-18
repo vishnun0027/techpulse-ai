@@ -21,6 +21,10 @@ def collect():
             
         try:
             feed = feedparser.parse(src["url"])
+            if not hasattr(feed, "entries") or not feed.entries:
+                logger.warning(f"No entries found or failed to parse feed: {src['url']}")
+                continue
+                
             for entry in feed.entries[:15]:
                 url     = entry.get("link", "")
                 title   = entry.get("title", "")[:300]

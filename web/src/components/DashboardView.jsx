@@ -6,34 +6,58 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 export default function DashboardView({ session }) {
   const [stats, setStats] = useState({ total: 0, delivered: 0, ready: 0 });
   const [articles, setArticles] = useState([]);
+  const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
     async function fetchData() {
-      // Fetch counts
-      const [{ count: total }, { count: delivered }, { count: ready }, { data: recent }] = await Promise.all([
+      // Setup date bounds for chart
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+
+      // Fetch counts and recent items
+      const [
+        { count: total }, 
+        { count: delivered }, 
+        { count: ready }, 
+        { data: recent }, 
+        { data: chartArticles }
+      ] = await Promise.all([
         supabase.from('articles').select('source_url', { count: 'exact', head: true }),
         supabase.from('articles').select('source_url', { count: 'exact', head: true }).eq('is_delivered', true),
         supabase.from('articles').select('source_url', { count: 'exact', head: true }).eq('is_delivered', false).gte('score', 2.5),
-        supabase.from('articles').select('*').order('created_at', { ascending: false }).limit(20)
+        supabase.from('articles').select('*').order('created_at', { ascending: false }).limit(20),
+        supabase.from('articles').select('created_at').eq('is_delivered', true).gte('created_at', sevenDaysAgo.toISOString())
       ]);
 
       setStats({ total: total || 0, delivered: delivered || 0, ready: ready || 0 });
       setArticles(recent || []);
+
+      // Build chart data
+      const deliveryCounts = {};
+      const today = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dayStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+        deliveryCounts[dayStr] = 0;
+      }
+
+      (chartArticles || []).forEach(a => {
+        const d = new Date(a.created_at);
+        const dayStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+        if (deliveryCounts[dayStr] !== undefined) {
+          deliveryCounts[dayStr]++;
+        }
+      });
+
+      setChartData(Object.keys(deliveryCounts).map(k => ({ name: k, delivered: deliveryCounts[k] })));
       setLoading(false);
     }
     fetchData();
   }, [session]);
 
-  const mockChartData = [
-    { name: 'Mon', delivered: 12 },
-    { name: 'Tue', delivered: 19 },
-    { name: 'Wed', delivered: 15 },
-    { name: 'Thu', delivered: 22 },
-    { name: 'Fri', delivered: 28 },
-    { name: 'Sat', delivered: 10 },
-    { name: 'Sun', delivered: 34 }
-  ];
+
 
   return (
     <div>
@@ -61,7 +85,7 @@ export default function DashboardView({ session }) {
           <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', fontWeight: 600 }}>Delivery Velocity</h2>
           <div style={{ height: '300px', width: '100%' }}>
             <ResponsiveContainer>
-              <AreaChart data={mockChartData}>
+              <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="name" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
