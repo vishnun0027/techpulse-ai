@@ -52,13 +52,20 @@ def ensure_group_exists(group_name: str):
             raise e
 
 def read_from_group(group_name: str, consumer_name: str, count: int = 10) -> list:
-    """Read new messages from the group (or pending messages if any)."""
-    # XREADGROUP GROUP group_name consumer_name COUNT count STREAMS stream:raw >
-    # The '>' means 'buy and read new messages only'
+    """Read from the group, prioritizing pending messages for this consumer."""
+    # 1. First, try to read messages assigned to this consumer but not yet ACKed (Pending)
+    # Using '0' instead of '>' to get pending messages
     result = redis.execute(command=[
         "XREADGROUP", "GROUP", group_name, consumer_name,
-        "COUNT", str(count), "STREAMS", STREAM_RAW, ">"
+        "COUNT", str(count), "STREAMS", STREAM_RAW, "0"
     ])
+    
+    # 2. If no pending, try to read NEW messages ('>')
+    if not result or not result[0][1]:
+        result = redis.execute(command=[
+            "XREADGROUP", "GROUP", group_name, consumer_name,
+            "COUNT", str(count), "STREAMS", STREAM_RAW, ">"
+        ])
     
     if not result:
         return []

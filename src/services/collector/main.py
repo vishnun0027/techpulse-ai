@@ -1,6 +1,8 @@
 import time
+from datetime import datetime, timedelta, timezone
 import feedparser
 from loguru import logger
+from shared.config import settings
 from shared.redis_client import check_seen, mark_seen, check_title_seen, mark_title_seen, push_to_stream
 from shared.db import log_telemetry, get_rss_sources
 from services.collector.filter import is_relevant
@@ -11,6 +13,9 @@ def collect():
     total   = 0
     skipped = 0
     sources = get_rss_sources()
+    
+    # Calculate cutoff for freshness
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.collection_interval_days)
 
     # In a multi-tenant world, source urls might be requested by multiple users
     for src in sources:
@@ -30,7 +35,16 @@ def collect():
                 url     = entry.get("link", "")
                 title   = entry.get("title", "")[:300]
                 content = entry.get("summary", "")[:2000]
+                
+                # 1. Freshness Check (e.g. 14 days)
+                pub_date = entry.get("published_parsed")
+                if pub_date:
+                    dt = datetime.fromtimestamp(time.mktime(pub_date), tz=timezone.utc)
+                    if dt < cutoff:
+                        logger.debug(f"Skipped (stale): {title[:40]}...")
+                        continue
 
+                # 2. Deduplication Check
                 if not url or check_seen(url, user_id) or check_title_seen(title, user_id):
                     continue
 
@@ -66,18 +80,19 @@ def collect():
         f"Collection complete — {total} queued, {skipped} skipped"
     )
     
-    # Calculate source_health (Successful vs Total)
-    success_count = sum(1 for src in sources if src.get("_success", True))
-    source_health = round((success_count / len(sources) * 100) if sources else 0, 1)
-
-    # Calculate noise_reduction (skipped vs total valid found)
+    # Calculate source health metrics for dashboard
+    total_sources = len(sources)
+    error_count   = sum(1 for src in sources if not src.get("_success", True))
+    
+    # Calculate noise_ratio (skipped vs total valid found)
     found = total + skipped
-    noise_reduction = round((skipped / found * 100) if found > 0 else 0, 1)
+    noise_ratio = round((skipped / found * 100) if found > 0 else 0, 1)
 
     # Record telemetry
     log_telemetry("collector", {
-        "source_health": source_health,
-        "noise_reduction": noise_reduction
+        "total_sources": total_sources,
+        "error_count":   error_count,
+        "noise_ratio":   noise_ratio
     })
 
 

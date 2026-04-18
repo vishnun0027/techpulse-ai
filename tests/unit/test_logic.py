@@ -6,7 +6,9 @@ def test_get_theme_logic():
     # Test mapping specific topics to high-level themes
     assert get_theme(["llm", "python"]) == "🧠 Generative AI"
     assert get_theme(["postgres", "security"]) == "🛡️ Security & Infra"
-    assert get_theme(["cooking", "sports"]) == "🌐 General Tech"
+    # New logic: Fallback to the first topic formatted as "📌 Topic"
+    assert get_theme(["cooking", "sports"]) == "📌 Cooking"
+    assert get_theme([]) == "🌐 General Tech"
 
 def test_group_by_themes():
     articles = [
@@ -17,7 +19,7 @@ def test_group_by_themes():
     grouped = group_by_themes(articles)
     assert "🧠 Generative AI" in grouped
     assert "🛠️ Dev Tools" in grouped
-    assert "🌐 General Tech" in grouped
+    assert "📌 News" in grouped
     assert len(grouped["🧠 Generative AI"]) == 1
 
 def test_is_relevant_filter(mocker):

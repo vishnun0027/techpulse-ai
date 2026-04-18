@@ -12,11 +12,18 @@ THEMES = {
 }
 
 def get_theme(topics: list) -> str:
+    if not topics:
+        return "🌐 General Tech"
+        
     topics_lower = [t.lower() for t in topics]
     for theme, keywords in THEMES.items():
-        if any(k in topics_lower for k in keywords):
+        if any(k.lower() in topics_lower for k in keywords):
             return theme
-    return "🌐 General Tech"
+            
+    # Dynamic fallback: Use the first relevant topic as the category
+    # Format: "📌 Title Case Topic"
+    main_topic = topics[0].strip().title()
+    return f"📌 {main_topic}"
 
 def group_by_themes(articles: list) -> dict:
     grouped = {}

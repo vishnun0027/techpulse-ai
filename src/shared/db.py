@@ -7,9 +7,12 @@ supabase = create_client(settings.supabase_url, settings.supabase_key)
 
 def save_article(article: dict) -> bool:
     try:
-        supabase.table("articles") \
+        res = supabase.table("articles") \
             .upsert(article, on_conflict="source_url,user_id") \
             .execute()
+        if not res.data:
+            logger.error(f"DB save failed (no data returned): {res}")
+            return False
         return True
     except Exception as e:
         logger.error(f"DB save error: {e}")
@@ -82,18 +85,21 @@ def get_rss_sources():
         print(f"Error fetching RSS sources: {e}")
         return []
 
-def get_filter_config(user_id: str | None = None):
+def get_filter_config(user_id: str):
     """Fetches allowed, blocked, and priority topics from the app_config table for a given user."""
+    if not user_id:
+        return {"allowed": [], "blocked": [], "priority": []}
     try:
-        query = supabase.table("app_config").select("value").eq("key", "topics")
-        if user_id:
-            query = query.eq("user_id", user_id)
+        res = supabase.table("app_config") \
+            .select("value") \
+            .eq("key", "topics") \
+            .eq("user_id", user_id) \
+            .execute()
         
-        res = query.execute()
         if res.data:
             return res.data[0]["value"]
     except Exception as e:
-        print(f"Error fetching filter config: {e}")
+        logger.error(f"Error fetching filter config for {user_id}: {e}")
     
     return {"allowed": [], "blocked": [], "priority": []}
 

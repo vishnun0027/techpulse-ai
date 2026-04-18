@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     upstash_redis_rest_token: str
     top_n_articles: int = 10
     dedup_ttl_days: int = 7
+    collection_interval_days: int = 14
 
 
 settings = Settings()
