@@ -12,7 +12,7 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 
 - **🚀 Async Performance**: Refactored with `asyncio` to reduce GitHub Actions execution time by ~70%, saving valuable free-tier minutes.
 - **🧠 Smart Topic Digest**: Articles are grouped into thematic clusters (GenAI, Dev Tools, ML) and delivered as a structured digest.
-- **🚀 Self-Service Dashboard**: Manage RSS sources and topic filtering keywords directly from the **React-based Web Dashboard**—no code changes required.
+- **🚀 Self-Service Dashboard**: Manage RSS sources and topic filtering keywords directly from the **React-based Web Dashboard** (hosted in the `techpulse-web` companion repository).
 - **📈 Topic Boosting**: Prioritize specific domains (like 'fine-tune' or 'ocr') with automatic score boosting (+1.5).
 - **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium React Dashboard** and a **Beautiful CLI Monitor** (Rich).
 - **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing.
@@ -96,11 +96,6 @@ DEDUP_TTL_DAYS=7
 ```
 
 ### 4. Running Locally
-
-**Web Dashboard**:
-```bash
-make web-dev
-```
 
 **System Pipeline (Operator)**:
 ```bash
