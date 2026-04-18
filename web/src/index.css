@@ -108,8 +108,7 @@ body {
 /* Main Content */
 .main-content {
   padding: 2rem 3rem;
-  height: 100vh;
-  overflow-y: auto;
+  flex: 1;
 }
 
 .header {

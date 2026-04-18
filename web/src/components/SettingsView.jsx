@@ -212,7 +212,6 @@ export default function SettingsView({ session }) {
       {/* Page header */}
       <div className="header">
         <h1>Configuration</h1>
-        <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{session.user.email}</span>
       </div>
 
       <div className="settings-grid">
