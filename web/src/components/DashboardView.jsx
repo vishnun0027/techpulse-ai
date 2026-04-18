@@ -9,6 +9,7 @@ export default function DashboardView({ session }) {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
     async function fetchData() {
       // Setup date bounds for chart
       const sevenDaysAgo = new Date();
