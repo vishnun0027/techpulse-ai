@@ -9,13 +9,13 @@ export default function DashboardLayout({ session }) {
 
   return (
     <div className="app-container">
-      <aside className="sidebar glass-panel" style={{ borderRadius: 0, borderTop: 0, borderBottom: 0, borderLeft: 0 }}>
-        <div className="brand">
-          <Activity size={24} color="var(--accent)" />
-          TechPulse Pro
-        </div>
-        
-        <div style={{ flex: 1, marginTop: '1rem' }}>
+      <nav className="navbar glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, position: 'sticky', top: 0, zIndex: 50 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '3rem' }}>
+          <div className="brand">
+            <Activity size={24} color="var(--accent)" />
+            TechPulse Pro
+          </div>
+          
           <div className="nav-links">
             <NavLink 
               to="/" 
@@ -33,17 +33,17 @@ export default function DashboardLayout({ session }) {
           </div>
         </div>
 
-        <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1.5rem' }}>
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem', wordBreak: 'break-all' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             {session.user.email}
           </div>
-          <button className="secondary" onClick={handleLogout} style={{ width: '100%', justifyContent: 'center' }}>
+          <button className="secondary" onClick={handleLogout} style={{ padding: '0.5rem 1rem' }}>
             <LogOut size={16} /> Disconnect
           </button>
         </div>
-      </aside>
+      </nav>
 
-      <main className="main-content">
+      <main className="main-content" style={{ margin: '0 auto', width: '100%', maxWidth: '1400px' }}>
         <Outlet />
       </main>
     </div>
