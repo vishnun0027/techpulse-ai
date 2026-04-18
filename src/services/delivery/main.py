@@ -134,10 +134,12 @@ def deliver():
             logger.warning(f"User {user_id} has articles but no tenant profile, skipping.")
             continue
 
+        user_name = profile.get("full_name") or "Tech Explorer"
+        
         grouped = group_by_themes(articles)
         total_to_send = sum(len(v) for v in grouped.values())
         
-        logger.info(f"Delivering {total_to_send} articles across {len(grouped)} themes to user {user_id}...")
+        logger.info(f"Delivering {total_to_send} articles to {user_name} ({user_id})...")
 
         slack_url = profile.get("slack_webhook_url")
         discord_url = profile.get("discord_webhook_url")
@@ -147,8 +149,11 @@ def deliver():
             continue
 
         if slack_url:
+            payload = slack_payload(grouped)
+            # Personalize Header
+            payload["blocks"][0]["text"]["text"] = f"🚀 Hi {user_name}, here is your TechPulse Digest"
             try:
-                r = httpx.post(slack_url, json=slack_payload(grouped), timeout=10)
+                r = httpx.post(slack_url, json=payload, timeout=10)
                 r.raise_for_status()
                 logger.success(f"Slack ✅ (User {user_id})")
             except Exception as e:
@@ -156,6 +161,10 @@ def deliver():
 
         if discord_url:
             chunks = discord_payload_chunks(grouped)
+            # Personalize first chunk
+            if chunks:
+                chunks[0]["content"] = f"# 🚀 Hi {user_name}, here is your TechPulse Digest\n\n" + chunks[0]["content"].replace("# 🚀 TechPulse Smart Digest\n\n", "")
+            
             for i, chunk in enumerate(chunks):
                 try:
                     r = httpx.post(discord_url, json=chunk, timeout=10)

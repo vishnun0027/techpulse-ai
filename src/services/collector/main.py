@@ -66,18 +66,18 @@ def collect():
         f"Collection complete — {total} queued, {skipped} skipped"
     )
     
-    # Calculate noise ratio (skipped vs total valid found)
+    # Calculate source_health (Successful vs Total)
+    success_count = sum(1 for src in sources if src.get("_success", True))
+    source_health = round((success_count / len(sources) * 100) if sources else 0, 1)
+
+    # Calculate noise_reduction (skipped vs total valid found)
     found = total + skipped
-    noise_ratio = round((skipped / found * 100) if found > 0 else 0, 1)
+    noise_reduction = round((skipped / found * 100) if found > 0 else 0, 1)
 
     # Record telemetry
     log_telemetry("collector", {
-        "found": found,
-        "queued": total,
-        "skipped": skipped,
-        "noise_ratio": noise_ratio,
-        "total_sources": len(sources),
-        "error_count": sum(1 for src in sources if not src.get("_success", True)) # We need to track success
+        "source_health": source_health,
+        "noise_reduction": noise_reduction
     })
 
 

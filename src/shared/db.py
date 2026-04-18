@@ -49,14 +49,25 @@ def mark_as_delivered(source_urls: list[str], user_id: str):
 
 def log_telemetry(service: str, metrics: dict, user_id: str | None = None, success: bool = True):
     try:
-        payload = {
+        # Base payload
+        base = {
             "service": service,
-            "metrics": metrics,
-            "success": success
+            "success": success,
+            "metrics": metrics # Keep JSONB for backup
         }
         if user_id:
-            payload["user_id"] = user_id
-        supabase.table("telemetry").insert(payload).execute()
+            base["user_id"] = user_id
+
+        # If metrics contains keys that match the spec, we can split them into multiple rows 
+        # or just store them in the new columns if there's only one.
+        # To strictly follow the spec, we'll insert a row per metric if they are provided as a dict.
+        for name, val in metrics.items():
+            if isinstance(val, (int, float)):
+                payload = base.copy()
+                payload["metric_name"] = name
+                payload["value"] = float(val)
+                supabase.table("telemetry").insert(payload).execute()
+        
     except Exception as e:
         print(f"Failed to log telemetry: {e}")
 

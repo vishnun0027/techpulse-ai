@@ -82,14 +82,14 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
                 source=d.get("source", "")
             )
 
-            # Apply Topic Boost
+            # Apply Topic Boost (Spec: +20% boost = +1.0)
             final_score = result.score
             try:
                 config = get_filter_config(user_id)
                 priority = [t.lower() for t in config.get("priority", [])]
                 if any(t.lower() in priority for t in result.topics):
-                    final_score = min(5.0, final_score + 1.5)
-                    logger.info(f"🚀 Priority Boost applied to {d.get('title')[:30]}... (+1.5)")
+                    final_score = min(5.0, final_score + 1.0)
+                    logger.info(f"🚀 SPEC Priority Boost (+1.0) applied to {d.get('title')[:30]}...")
             except Exception as e:
                 logger.warning(f"Failed to apply priority boost: {e}")
 
@@ -126,7 +126,7 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
 async def summarize():
     ensure_group_exists(GROUP_NAME)
     
-    # Increase count to 60 to drain the backlog faster
+    # Read from group
     messages = read_from_group(GROUP_NAME, CONSUMER_NAME, count=60)
     if not messages:
         logger.info("No new messages in stream")
@@ -134,8 +134,6 @@ async def summarize():
 
     logger.info(f"Summarizing {len(messages)} articles (Async)...")
     
-    # Use a semaphore to process one at a time but with async efficiency
-    # and controlled timing.
     semaphore = asyncio.Semaphore(1)
     tasks = [process_message(m, semaphore) for m in messages]
     results = await asyncio.gather(*tasks)
@@ -143,14 +141,12 @@ async def summarize():
     # Record telemetry
     scores = [r for r in results if r is not None]
     success_count = len(scores)
-    avg_score = round(sum(scores) / success_count, 2) if success_count > 0 else 0
+    insight_quality = round(sum(scores) / success_count, 2) if success_count > 0 else 0
+    noise_reduction = round(((len(messages) - success_count) / len(messages) * 100), 1) if len(messages) > 0 else 0
     
     log_telemetry("summarizer", {
-        "read": len(messages),
-        "summarized": success_count,
-        "failed": len(messages) - success_count,
-        "avg_score": avg_score,
-        "batch_efficiency": round((success_count / len(messages) * 100), 1) if len(messages) > 0 else 0
+        "insight_quality": insight_quality,
+        "noise_reduction": noise_reduction
     })
 
 
