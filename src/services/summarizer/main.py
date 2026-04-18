@@ -116,12 +116,12 @@ async def process_message(msg: dict, semaphore: asyncio.Semaphore) -> bool:
 
             # Rate limit: ~20 RPM = 3s between requests (must be before return)
             await asyncio.sleep(3)
-            return bool(success)
+            return float(final_score)
 
         except Exception as e:
             logger.error(f"Summarize failed for message {msg_id}: {e}")
             await asyncio.sleep(3)  # still wait on failure to avoid error storms
-            return False
+            return None
 
 async def summarize():
     ensure_group_exists(GROUP_NAME)
@@ -141,11 +141,16 @@ async def summarize():
     results = await asyncio.gather(*tasks)
     
     # Record telemetry
-    success_count = sum(1 for r in results if r)
+    scores = [r for r in results if r is not None]
+    success_count = len(scores)
+    avg_score = round(sum(scores) / success_count, 2) if success_count > 0 else 0
+    
     log_telemetry("summarizer", {
         "read": len(messages),
         "summarized": success_count,
-        "failed": len(messages) - success_count
+        "failed": len(messages) - success_count,
+        "avg_score": avg_score,
+        "batch_efficiency": round((success_count / len(messages) * 100), 1) if len(messages) > 0 else 0
     })
 
 

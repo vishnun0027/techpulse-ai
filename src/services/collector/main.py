@@ -23,6 +23,7 @@ def collect():
             feed = feedparser.parse(src["url"])
             if not hasattr(feed, "entries") or not feed.entries:
                 logger.warning(f"No entries found or failed to parse feed: {src['url']}")
+                src["_success"] = False
                 continue
                 
             for entry in feed.entries[:15]:
@@ -59,16 +60,24 @@ def collect():
 
         except Exception as e:
             logger.error(f"[{src.get('name', 'Unknown')}] failed: {e}")
+            src["_success"] = False
 
     logger.success(
         f"Collection complete — {total} queued, {skipped} skipped"
     )
     
+    # Calculate noise ratio (skipped vs total valid found)
+    found = total + skipped
+    noise_ratio = round((skipped / found * 100) if found > 0 else 0, 1)
+
     # Record telemetry
     log_telemetry("collector", {
-        "found": total + skipped,
+        "found": found,
         "queued": total,
-        "skipped": skipped
+        "skipped": skipped,
+        "noise_ratio": noise_ratio,
+        "total_sources": len(sources),
+        "error_count": sum(1 for src in sources if not src.get("_success", True)) # We need to track success
     })
 
 
