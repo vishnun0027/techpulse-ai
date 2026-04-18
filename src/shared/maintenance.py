@@ -42,10 +42,32 @@ def clear_db():
         logger.error(f"Database clear failed: {e}")
 
 
+def purge_old_data(days: int = 90):
+    """Delete data older than the specified retention period."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    
+    logger.info(f"🧹 Purging data older than {days} days (Cutoff: {cutoff})...")
+    
+    try:
+        # 1. Purge articles
+        res_art = supabase.table("articles").delete().lt("created_at", cutoff).execute()
+        art_count = len(res_art.data or [])
+        
+        # 2. Purge telemetry
+        res_tel = supabase.table("telemetry").delete().lt("timestamp", cutoff).execute()
+        tel_count = len(res_tel.data or [])
+        
+        logger.success(f"Purge complete. Removed {art_count} articles and {tel_count} telemetry rows.")
+    except Exception as e:
+        logger.error(f"Purge failed: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="TechPulse AI Maintenance Control")
-    parser.add_argument("action", choices=["reset"], help="Action to perform")
+    parser.add_argument("action", choices=["reset", "purge"], help="Action to perform")
     parser.add_argument("--confirm", action="store_true", help="Confirm destructive action")
+    parser.add_argument("--days", type=int, default=90, help="Retention period in days (for purge)")
     
     args = parser.parse_args()
     
@@ -58,6 +80,9 @@ def main():
         clear_redis()
         clear_db()
         logger.success("✨ Master Reset Complete. System is now in a clean state.")
+    
+    elif args.action == "purge":
+        purge_old_data(args.days)
 
 
 if __name__ == "__main__":
