@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env", extra="ignore")
 
     # Groq AI Settings
-    groq_api_key: str = Field(..., description="API key for Groq Cloud")
+    groq_api_key: str = Field("", description="API key for Groq Cloud (Required for Summarizer)")
     groq_model: str = Field("llama-3.1-8b-instant", description="Model ID to use for summarization")
 
     # Supabase Settings (Backend Data & Auth)
