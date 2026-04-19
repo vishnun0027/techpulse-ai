@@ -8,16 +8,28 @@ from shared.db import log_telemetry, get_rss_sources
 from services.collector.filter import is_relevant
 
 
-def collect():
+def collect() -> None:
+    """
+    Executes the multi-tenant collection pipeline.
+    
+    1. Fetches all active RSS sources from Supabase.
+    2. Parses each feed for new entries.
+    3. Filters entries based on:
+       - Publication date (14-day freshness limit).
+       - Deduplication (seen URL or title).
+       - User-defined topic relevance.
+    4. Queues relevant articles into the Redis stream for summarization.
+    5. Records operational telemetry (noise ratio, source health).
+    """
     logger.info("Starting collection...")
-    total   = 0
-    skipped = 0
+    total_queued: int = 0
+    total_skipped: int = 0
     sources = get_rss_sources()
     
-    # Calculate cutoff for freshness
+    # Calculate cutoff for freshness based on settings
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.collection_interval_days)
 
-    # In a multi-tenant world, source urls might be requested by multiple users
+    # In a multi-tenant world, sources are associated with specific user_ids
     for src in sources:
         user_id = src.get("user_id")
         if not user_id:
@@ -31,12 +43,13 @@ def collect():
                 src["_success"] = False
                 continue
                 
+            # We only check the top 15 entries per source to keep runs fast
             for entry in feed.entries[:15]:
-                url     = entry.get("link", "")
-                title   = entry.get("title", "")[:300]
+                url = entry.get("link", "")
+                title = entry.get("title", "")[:300]
                 content = entry.get("summary", "")[:2000]
                 
-                # 1. Freshness Check (e.g. 14 days)
+                # 1. Freshness Check
                 pub_date = entry.get("published_parsed")
                 if pub_date:
                     dt = datetime.fromtimestamp(time.mktime(pub_date), tz=timezone.utc)
@@ -48,11 +61,13 @@ def collect():
                 if not url or check_seen(url, user_id) or check_title_seen(title, user_id):
                     continue
 
+                # 3. Topic Relevance Check
                 if not is_relevant(title, content, user_id):
-                    skipped += 1
+                    total_skipped += 1
                     logger.debug(f"Skipped (irrelevant): {title[:60]}")
                     continue
 
+                # 4. Queue for Summarization
                 try:
                     push_to_stream({
                         "user_id":    user_id,
@@ -63,32 +78,32 @@ def collect():
                     })
                     mark_seen(url, user_id)
                     mark_title_seen(title, user_id)
-                    total += 1
+                    total_queued += 1
                     logger.debug(f"Queued: {title[:60]}")
 
                 except Exception as e:
                     logger.error(f"Failed to push {url} to stream: {e}")
 
             logger.info(f"[{src.get('name', 'Unknown')}] done for user {user_id}")
-            time.sleep(1)
+            time.sleep(1)  # Polite pause between sources
 
         except Exception as e:
             logger.error(f"[{src.get('name', 'Unknown')}] failed: {e}")
             src["_success"] = False
 
     logger.success(
-        f"Collection complete — {total} queued, {skipped} skipped"
+        f"Collection complete — {total_queued} queued, {total_skipped} skipped"
     )
     
-    # Calculate source health metrics for dashboard
+    # Calculate health metrics
     total_sources = len(sources)
-    error_count   = sum(1 for src in sources if not src.get("_success", True))
+    error_count = sum(1 for src in sources if not src.get("_success", True))
     
-    # Calculate noise_ratio (skipped vs total valid found)
-    found = total + skipped
-    noise_ratio = round((skipped / found * 100) if found > 0 else 0, 1)
+    # Calculate noise_ratio (skipped vs total valid candidates found)
+    processed_count = total_queued + total_skipped
+    noise_ratio = round((total_skipped / processed_count * 100) if processed_count > 0 else 0, 1)
 
-    # Record telemetry
+    # Record telemetry for the dashboard
     log_telemetry("collector", {
         "total_sources": total_sources,
         "error_count":   error_count,

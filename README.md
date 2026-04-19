@@ -10,16 +10,13 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 
 ## 🔥 Key Features
 
-- **🚀 Async Performance**: Refactored with `asyncio` to reduce GitHub Actions execution time by ~70%, saving valuable free-tier minutes.
-- **🧠 Smart Topic Digest**: Articles are grouped into thematic clusters (GenAI, Dev Tools, ML) and delivered as a structured digest.
-- **🚀 Self-Service Dashboard**: Manage RSS sources and topic filtering keywords directly from the **React-based Web Dashboard** (hosted in the `techpulse-web` companion repository).
-- **📈 Topic Boosting**: Prioritize specific domains (like 'fine-tune' or 'ocr') with automatic score boosting (+1.5).
-- **📊 Health Monitoring**: A dual-layered monitoring system with a **Premium React Dashboard** and a **Beautiful CLI Monitor** (Rich).
-- **🛡️ Reliable Stream Pipeline**: Uses **Redis Consumer Groups** (`XREADGROUP`/`XACK`) to ensure at-least-once processing.
-- **⚡ Telemetry Logging**: Every run tracks metrics (fetched vs. queued, success vs. failure) to provide full visibility.
-- **🎛️ Dual CLI System**: Professional command-line tools for both **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
-- ** pro-active Maintenance**: Includes a master "System Reset" tool to easily clear streams and database history.
-- **📡 Multi-Channel Delivery**: Formatted Block Kit payloads for Slack and Markdown-optimized chunks for Discord.
+- **🚀 Scaling Architecture**: Fully multi-tenant. Decoupled configuration allows the pipeline to serve multiple users with isolated RSS feeds and topic filters.
+- **🧠 Personalized AI Digests**: Uses Groq (Llama 3) to summarize articles based on per-user interest profiles.
+- **🛡️ 14-Day Freshness Filter**: Automatically skips stale news (configurable via `.env`) to keep your digest current.
+- **🚀 Efficiency First**: Asynchronous batch processing and Redis Consumer Groups ensure high throughput with minimal resource overhead.
+- **🎛️ Professionally Standardized**: All services feature structured logging, strict type hints, and comprehensive error handling.
+- **⚡ Dual CLI System**: Dedicated tools for **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
+- **📡 Multi-Channel Delivery**: Native support for both Slack Block Kit and Discord Markdown payloads.
 
 ---
 
@@ -73,26 +70,23 @@ Clone the repo and install dependencies:
 uv sync
 ```
 
-### 3. Database Setup (Crucial)
-Before running, you must apply the database migrations in your Supabase SQL Editor:
-1. Run migrations `001_...` through `006_rls_security.sql`.
-2. (Optional) Populate default config if not using the Dashboard/CLI:
-```bash
-uv run python scratch/migrate_config.py
-```
+### 3. Database Migration
+1. Apply the consolidated schema in your Supabase SQL Editor: [setup_supabase.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/setup_supabase.sql).
+2. (Optional) Run the study file for ETag support if you wish to implement it later: [009_smart_refresh.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/009_smart_refresh.sql).
 
 ### 3. Environment Config
 Create a `.env` file from the following template:
 ```env
 SUPABASE_URL=your_url
-SUPABASE_KEY=your_service_role_key      # Required for Operator CLI & Services
-SUPABASE_ANON_KEY=your_anon_public_key  # Required for User CLI
+SUPABASE_KEY=your_service_role_key      # Required for techpulse-ops
+SUPABASE_ANON_KEY=your_anon_public_key  # Required for techpulse (User CLI)
 GROQ_API_KEY=your_key
 GROQ_MODEL=llama-3.1-8b-instant
 UPSTASH_REDIS_REST_URL=your_url
 UPSTASH_REDIS_REST_TOKEN=your_token
 TOP_N_ARTICLES=10
 DEDUP_TTL_DAYS=7
+COLLECTION_INTERVAL_DAYS=14             # How far back to look (default 14 days)
 ```
 
 ### 4. Running Locally

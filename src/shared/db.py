@@ -1,11 +1,23 @@
-from supabase import create_client
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+from supabase import create_client, Client
 from loguru import logger
 from shared.config import settings
 
-supabase = create_client(settings.supabase_url, settings.supabase_key)
+# Initialize Supabase client
+supabase: Client = create_client(settings.supabase_url, settings.supabase_key)
 
 
-def save_article(article: dict) -> bool:
+def save_article(article: Dict[str, Any]) -> bool:
+    """
+    Saves or updates an article in the Supabase 'articles' table.
+    
+    Args:
+        article: A dictionary containing article fields (title, summary, source_url, etc.).
+    
+    Returns:
+        bool: True if save/upsert was successful, False otherwise.
+    """
     try:
         res = supabase.table("articles") \
             .upsert(article, on_conflict="source_url,user_id") \
@@ -19,25 +31,43 @@ def save_article(article: dict) -> bool:
         return False
 
 
-def get_top_articles(n: int = 10) -> list:
-    from datetime import datetime, timedelta, timezone
+def get_top_articles(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Retrieves high-scoring, undelivered articles from the last 24 hours.
+    
+    Args:
+        limit: The maximum number of articles to return per user (default: 10).
+        
+    Returns:
+        List[Dict[str, Any]]: A list of articles ready for delivery.
+    """
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    resp = (
-        supabase.table("articles")
-        .select("user_id, title, summary, source_url, source, score, topics")  # ← added user_id
-        .gte("created_at", since)
-        .eq("is_delivered", False)
-        .not_.is_("summary", "null")
-        .gte("score", 3.0)
-        .order("score", desc=True)
-        .limit(500)  # increased limit since it covers all users now
-        .execute()
-    )
-    return resp.data or []
+    try:
+        resp = (
+            supabase.table("articles")
+            .select("user_id, title, summary, source_url, source, score, topics")
+            .gte("created_at", since)
+            .eq("is_delivered", False)
+            .not_.is_("summary", "null")
+            .gte("score", 3.0)
+            .order("score", desc=True)
+            .limit(500)
+            .execute()
+        )
+        return resp.data or []
+    except Exception as e:
+        logger.error(f"Error fetching top articles: {e}")
+        return []
 
 
-def mark_as_delivered(source_urls: list[str], user_id: str):
-    """Mark articles as delivered in the database for a specific user."""
+def mark_as_delivered(source_urls: List[str], user_id: str) -> None:
+    """
+    Marks a batch of articles as delivered in the database for a specific user.
+    
+    Args:
+        source_urls: List of URLs to mark.
+        user_id: The ID of the tenant who received the articles.
+    """
     if not source_urls:
         return
     try:
@@ -50,20 +80,25 @@ def mark_as_delivered(source_urls: list[str], user_id: str):
         logger.error(f"DB update error (mark_delivered): {e}")
 
 
-def log_telemetry(service: str, metrics: dict, user_id: str | None = None, success: bool = True):
+def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] = None, success: bool = True) -> None:
+    """
+    Records operational metrics to the 'telemetry' table.
+    
+    Args:
+        service: Name of the service (e.g., 'collector', 'summarizer').
+        metrics: Dictionary of metric values.
+        user_id: Optional UUID of the tenant associated with the metric.
+        success: Whether the operation was successful.
+    """
     try:
-        # Base payload
         base = {
             "service": service,
             "success": success,
-            "metrics": metrics # Keep JSONB for backup
+            "metrics": metrics
         }
         if user_id:
             base["user_id"] = user_id
 
-        # If metrics contains keys that match the spec, we can split them into multiple rows 
-        # or just store them in the new columns if there's only one.
-        # To strictly follow the spec, we'll insert a row per metric if they are provided as a dict.
         for name, val in metrics.items():
             if isinstance(val, (int, float)):
                 payload = base.copy()
@@ -72,21 +107,36 @@ def log_telemetry(service: str, metrics: dict, user_id: str | None = None, succe
                 supabase.table("telemetry").insert(payload).execute()
         
     except Exception as e:
-        print(f"Failed to log telemetry: {e}")
+        logger.error(f"Failed to log telemetry: {e}")
+
 
 # ── DYNAMIC CONFIGURATION ─────────────────────────────────────────────────────
 
-def get_rss_sources():
-    """Fetches active RSS sources from the database, for all users."""
+def get_rss_sources() -> List[Dict[str, Any]]:
+    """
+    Fetches all active RSS sources from the database.
+    
+    Returns:
+        List[Dict[str, Any]]: List of source configurations.
+    """
     try:
         res = supabase.table("rss_sources").select("*").eq("is_active", True).execute()
         return res.data or []
     except Exception as e:
-        print(f"Error fetching RSS sources: {e}")
+        logger.error(f"Error fetching RSS sources: {e}")
         return []
 
-def get_filter_config(user_id: str):
-    """Fetches allowed, blocked, and priority topics from the app_config table for a given user."""
+
+def get_filter_config(user_id: str) -> Dict[str, List[str]]:
+    """
+    Retrieves the topic filter configuration for a specific user.
+    
+    Args:
+        user_id: The unique ID of the tenant.
+        
+    Returns:
+        Dict[str, List[str]]: Filter configuration dictionary with 'allowed', 'blocked', and 'priority' lists.
+    """
     if not user_id:
         return {"allowed": [], "blocked": [], "priority": []}
     try:
@@ -103,11 +153,17 @@ def get_filter_config(user_id: str):
     
     return {"allowed": [], "blocked": [], "priority": []}
 
-def get_tenant_profiles():
-    """Fetches all tenant profiles (webhooks etc)."""
+
+def get_tenant_profiles() -> List[Dict[str, Any]]:
+    """
+    Fetches all registered tenant profiles.
+    
+    Returns:
+        List[Dict[str, Any]]: List of tenant configuration profiles.
+    """
     try:
         res = supabase.table("tenant_profiles").select("*").execute()
         return res.data or []
     except Exception as e:
-        print(f"Error fetching tenant profiles: {e}")
+        logger.error(f"Error fetching tenant profiles: {e}")
         return []
