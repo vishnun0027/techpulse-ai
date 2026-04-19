@@ -1,154 +1,86 @@
-# TechPulse AI 🤖
+# TechPulse AI
 
-### *Your intelligent tech pulse, curated by AI.*
+### Intelligent technology news aggregation curated by AI.
 
-TechPulse AI is a high-performance, automated news aggregator designed for developers and AI enthusiasts. It monitors top-tier tech sources, filters the noise using intelligent heuristics, and delivers concise, high-value summaries directly to Slack and Discord.
+TechPulse AI is an automated news aggregation system designed to monitor high-signal technology sources, filter for relevance using intelligent heuristics, and deliver concise summaries directly to your preferred communication channels.
 
-The system is architected for **zero-cost operation**, leveraging free-tier services (Groq, Upstash, Supabase) and optimized for minimal resource consumption.
-
----
-
-## 🔥 Key Features
-
-- **🚀 Scaling Architecture**: Fully multi-tenant. Decoupled configuration allows the pipeline to serve multiple users with isolated RSS feeds and topic filters.
-- **🧠 Personalized AI Digests**: Uses Groq (Llama 3) to summarize articles based on per-user interest profiles.
-- **🛡️ 14-Day Freshness Filter**: Automatically skips stale news (configurable via `.env`) to keep your digest current.
-- **🚀 Efficiency First**: Asynchronous batch processing and Redis Consumer Groups ensure high throughput with minimal resource overhead.
-- **🎛️ Professionally Standardized**: All services feature structured logging, strict type hints, and comprehensive error handling.
-- **⚡ Dual CLI System**: Dedicated tools for **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
-- **📡 Multi-Channel Delivery**: Native support for both Slack Block Kit and Discord Markdown payloads.
+The system is designed for high efficiency and scalability, utilizing a multi-tenant architecture that allows for personalized news feeds and topic filtering for multiple users simultaneously.
 
 ---
 
-## 🏗️ Technical Architecture
+## Features
 
-```mermaid
-graph TD
-    Collector[Collector / RSS Scraper] -->|URL/Title Dedup| Filter[Keywords Filter]
-    Filter -->|XADD| Stream[(Redis Stream)]
-    Stream -->|XREADGROUP| Summarizer[Async Summarizer]
-    Summarizer -->|Groq API| LLM[Llama 3.1 8B]
-    Summarizer -->|Upsert| DB[(Supabase PostgreSQL)]
-    Delivery[Delivery Service] -->|Get Top Articles| DB
-    Delivery -->|Mark Delivered| DB
-    Delivery -->|Webhook| Notifications[Slack / Discord]
-
-    Collector -.->|Telemetry| TM[(Telemetry Table)]
-    Summarizer -.->|Telemetry| TM
-    Delivery -.->|Telemetry| TM
-    
-    UI[React Dashboard] -->|Query| DB
-    UI -->|Update| DB
-    
-    CLI_USER[User CLI] -->|RLS-Scoped| DB
-    CLI_OPS[Operator CLI] -->|Service-Role| DB
-```
+- **Multi-Tenant Architecture**: Optimized for individual user personalization with isolated RSS source management and topic filtering.
+- **AI-Powered Summarization**: Leverages large language models to generate technical summaries and relevance scores tailored to user profiles.
+- **Intelligent Filtering**: Implements a multi-tier keyword system to prioritize critical updates and filter out irrelevant content.
+- **automated Freshness Control**: Enforces strict publication date limits to ensure only the most recent and relevant news is processed.
+- **Unified Command Line Interface**: Professional CLI tools for both system management and personal account configuration.
+- **Multi-Channel Delivery**: Native support for delivering digests to Slack and Discord.
 
 ---
 
-## 🛠️ Technology Stack
-
-- **Framework**: Python 3.12+ (Asyncio, Pydantic, Loguru)
-- **Dependency Management**: [uv](https://github.com/astral-sh/uv)
-- **Inference**: Groq (Llama-3.1-8b-instant)
-- **Database**: Supabase (PostgreSQL)
-- **Stream/De-duplication**: Upstash Redis
-- **Deployment**: GitHub Actions (Scheduled CRON runs)
-
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Prerequisites
-- Python 3.12+ and `uv` installed.
-- API keys for: Groq, Supabase, and Upstash Redis.
-- Slack or Discord Webhooks (Optional).
+- Python 3.12 or higher.
+- Access to Supabase, Groq, and Redis (Upstash) instances.
 
-### 2. Setup
-Clone the repo and install dependencies:
+### 2. Installation
+Clone the repository and install the required dependencies:
 ```bash
 uv sync
 ```
 
-### 3. Database Migration
-1. Apply the consolidated schema in your Supabase SQL Editor: [setup_supabase.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/setup_supabase.sql).
-2. (Optional) Run the study file for ETag support if you wish to implement it later: [009_smart_refresh.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/009_smart_refresh.sql).
+### 3. Database Initialization
+Initialize your database schema by applying the consolidated migration file found in:
+`migrations/setup_supabase.sql`
 
-### 3. Environment Config
-Create a `.env` file from the following template:
+### 4. Configuration
+Create a `.env` file based on the following template to configure your external service connections:
 ```env
-SUPABASE_URL=your_url
-SUPABASE_KEY=your_service_role_key      # Required for techpulse-ops
-SUPABASE_ANON_KEY=your_anon_public_key  # Required for techpulse (User CLI)
-GROQ_API_KEY=your_key
-GROQ_MODEL=llama-3.1-8b-instant
-UPSTASH_REDIS_REST_URL=your_url
-UPSTASH_REDIS_REST_TOKEN=your_token
-TOP_N_ARTICLES=10
-DEDUP_TTL_DAYS=7
-COLLECTION_INTERVAL_DAYS=14             # How far back to look (default 14 days)
-```
-
-### 4. Running Locally
-
-**System Pipeline (Operator)**:
-```bash
-make pipeline
-# OR
-uv run techpulse-ops run all
+SUPABASE_URL=your_project_url
+SUPABASE_KEY=your_service_role_key
+SUPABASE_ANON_KEY=your_anon_public_key
+GROQ_API_KEY=your_groq_api_key
+UPSTASH_REDIS_REST_URL=your_redis_url
+UPSTASH_REDIS_REST_TOKEN=your_redis_token
+COLLECTION_INTERVAL_DAYS=14
 ```
 
 ---
 
-## ⚡ Command Line Power Tools
+## Usage
 
-TechPulse comes with two dedicated CLI tools.
-
-### 🛠️ Operator CLI (`techpulse-ops`)
-For system-level management and automation (bypasses RLS).
+### User CLI (`techpulse`)
+Manage your personal news sources and topic filters:
 ```bash
-# Run the pipeline
-uv run techpulse-ops run collect
-uv run techpulse-ops run summarize
-
-# Monitor system health
-uv run techpulse-ops monitor
-
-# List all tenants
-uv run techpulse-ops tenants list
-```
-
-### ⚡ User CLI (`techpulse`)
-For personal management of your own feeds and filters (enforces RLS).
-```bash
-# Login to your account
+# Log in to your personal account
 uv run techpulse login
 
-# Manage your sources
+# List and manage your RSS sources
 uv run techpulse sources list
-uv run techpulse sources import my_feeds.txt
 
-# Inspect status
+# View your personal pipeline status
 uv run techpulse status
 ```
 
----
-
-## 🧹 Maintenance & Testing
-
-### Master Storage Reset
-To wipe all Redis streams, deduplication data, and database history:
+### Operator CLI (`techpulse-ops`)
+For system-wide execution and service management:
 ```bash
-PYTHONPATH=src uv run python -m shared.maintenance reset --confirm
-```
+# Execute the full processing pipeline
+uv run techpulse-ops run all
 
-### Standardized Testing
-To verify the entire logic and pipeline using `pytest`:
-```bash
-PYTHONPATH=src uv run pytest
+# Monitor system-wide health and telemetry
+uv run techpulse-ops monitor
 ```
 
 ---
 
-## 📜 License
-MIT License. Feel free to use and contribute!
+## Technical Documentation
+For detailed information on the system architecture, data flow, and developer guidelines, please refer to:
+**[developer.md](developer.md)**
+
+---
+
+## License
+Distributed under the MIT License.
