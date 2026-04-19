@@ -54,7 +54,7 @@ def group_by_themes(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, 
         theme = get_theme(a.get("topics", []))
         if theme not in grouped:
             grouped[theme] = []
-        if len(grouped[theme]) < 4:  # Capacity limit per theme
+        if len(grouped[theme]) < 10:  # Capacity limit per theme
             grouped[theme].append(a)
     return grouped
 
