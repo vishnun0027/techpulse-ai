@@ -4,35 +4,28 @@ This document provides a technical deep-dive into the TechPulse AI architecture,
 
 ## 🏗️ Architecture & Data Flow
 
-TechPulse AI follows a **decoupled, event-driven architecture** using Redis Streams as a message broker and Supabase as a persistent multi-tenant store.
+TechPulse AI follows a decoupled, event-driven architecture using Redis Streams as a message broker and Supabase as a persistent multi-tenant store.
 
 ```mermaid
 graph TD
-    subgraph Services
-        C[Collector]
-        S[Summarizer]
-        D[Delivery]
-    end
+    Collector[Collector / RSS Scraper] -->|URL/Title Dedup| Filter[Keywords Filter]
+    Filter -->|XADD| Stream[(Redis Stream)]
+    Stream -->|XREADGROUP| Summarizer[Async Summarizer]
+    Summarizer -->|Groq API| LLM[Llama 3.1 8B]
+    Summarizer -->|Upsert| DB[(Supabase PostgreSQL)]
+    Delivery[Delivery Service] -->|Get Top Articles| DB
+    Delivery -->|Mark Delivered| DB
+    Delivery -->|Webhook| Notifications[Slack / Discord]
 
-    subgraph Middleware
-        R[(Upstash Redis)]
-        MQ[Stream: raw]
-    end
-
-    subgraph Persistence
-        DB[(Supabase PostgreSQL)]
-        TM[(Telemetry Table)]
-    end
-
-    C -->|Fetch & Filter| R
-    R -->|XADD| MQ
-    MQ -->|XREADGROUP| S
-    S -->|Summarize| DB
-    D -->|Notify| Webhooks[Slack / Discord]
+    Collector -.->|Telemetry| TM[(Telemetry Table)]
+    Summarizer -.->|Telemetry| TM
+    Delivery -.->|Telemetry| TM
     
-    C -.->|Log| TM
-    S -.->|Log| TM
-    D -.->|Log| TM
+    UI[React Dashboard] -->|Query| DB
+    UI -->|Update| DB
+    
+    CLI_USER[User CLI] -->|RLS-Scoped| DB
+    CLI_OPS[Operator CLI] -->|Service-Role| DB
 ```
 
 ### 1. The Collection Pipeline (`Collector`)
