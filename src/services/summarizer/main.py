@@ -9,15 +9,10 @@ from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt
 from shared.config import settings
 from shared.redis_client import ensure_group_exists, read_from_group, acknowledge_message
 from shared.db import save_article, log_telemetry, get_filter_config
+from shared.models import ArticleAnalysis
 
 
-# ── Structured Output Schema ──────────────────────────────────────────────────
-
-class ArticleAnalysis(BaseModel):
-    """Schema for structured AI analysis of a technology article."""
-    score: float = Field(..., ge=0.0, le=5.0, description="Relevance score 0.0 to 5.0")
-    summary: str = Field(..., description="2-3 sentence summary explaining the technical significance")
-    topics: List[str] = Field(..., description="List of topic tags. The FIRST tag MUST be a high-level category with an emoji (e.g., '🛠️ Python', '🦀 Rust')")
+# Shared models are now used for structured output schema
 
 
 # ── LangChain Setup ───────────────────────────────────────────────────────────

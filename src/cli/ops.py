@@ -3,7 +3,7 @@ techpulse-ops — Operator CLI
 Uses the service-role Supabase key from .env (bypasses RLS).
 Intended for server admins, cron jobs, and deployment pipelines.
 """
-from typing import Any
+from typing import Any, Dict
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -49,6 +49,76 @@ def get_active_users() -> list[str]:
     """Fetches all registered user IDs from tenant profiles."""
     profiles = get_tenant_profiles()
     return [p["user_id"] for p in profiles]
+
+
+def process_article_v2(db: Any, msg: Dict[str, Any], agent: Any, GROQ_API_KEY: str) -> bool:
+    """
+    Executes the full V2 pipeline for a single article message.
+    Stages: 2 (Enrich), 3 (Rank), 4 (Research)
+    """
+    article = msg["data"]
+    msg_id = msg["id"]
+    user_id = article.get("user_id")
+    title = article.get("title", "Untitled")
+
+    try:
+        # Stage 2: Enrich (Semantic)
+        embedding = embedder.embed_text(article.get("content", title), GROQ_API_KEY)
+        
+        if deduplicator.is_near_duplicate(db, embedding, user_id):
+            rprint(f"[dim]SKIP: Near-duplicate: {title[:50]}...[/dim]")
+            acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
+            return False
+        
+        novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
+        event_id = clusterer.find_or_create_event(db, summarizer_main.llm, embedding, title, user_id)
+        
+        # Stage 3: Rank
+        from services.summarizer.main import get_filter_config
+        config = get_filter_config(user_id)
+        quality = get_source_quality(article.get("source_id"), user_id)
+        
+        signals = scorer.RankSignals(
+            base_relevance=3.0, # Neutral fallback
+            novelty_score=novelty_score,
+            source_quality=quality,
+            topic_match=0.5,
+            priority_boost=1.0 if any(t.lower() in [tc.lower() for tc in config.get("priority", [])] for t in article.get("topics", [])) else 0.0
+        )
+        final_score = scorer.compute_final_score(signals)
+        
+        # Stage 4: Research Agent (RAG Deep Dive)
+        result = agent.invoke({
+            "article_text":  article.get("content", ""),
+            "article_title": title,
+            "user_id":       user_id,
+            "embedding":     embedding
+        })
+        
+        # Stage 5: Save
+        db.table("articles").upsert({
+            "user_id":       user_id,
+            "title":         title,
+            "source_url":    article.get("source_url"),
+            "source":        article.get("source"),
+            "content":       article.get("content"),
+            "embedding":     embedding,
+            "novelty_score": novelty_score,
+            "event_id":      event_id,
+            "score":         final_score,
+            "summary":       result["summary"],
+            "why_it_matters": result["why_it_matters"],
+            "topics":        result.get("topics", []),
+            "v2_processed":  True
+        }, on_conflict="source_url,user_id").execute()
+        
+        acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
+        rprint(f"[green]✓ Processed: {title[:50]}... [Score: {final_score}][/green]")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to process V2 pipeline for {title}: {e}")
+        return False
 
 
 # ── Run Sub-Commands ─────────────────────────────────────────────────────────
@@ -103,72 +173,9 @@ def run_all() -> None:
         rprint("[yellow]No new articles to process.[/yellow]")
     else:
         rprint(f"[blue]Processing {len(messages)} articles...[/blue]")
-        
         agent = build_research_agent(db, GROQ_API_KEY)
-        
         for msg in messages:
-            article = msg["data"]
-            msg_id = msg["id"]
-            user_id = article.get("user_id")
-            title = article.get("title", "Untitled")
-            
-            try:
-                # Stage 2: Enrich
-                embedding = embedder.embed_text(article.get("content", title), GROQ_API_KEY)
-                
-                if deduplicator.is_near_duplicate(db, embedding, user_id):
-                    rprint(f"[dim]SKIP: Near-duplicate: {title[:50]}...[/dim]")
-                    acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
-                    continue
-                
-                novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
-                event_id = clusterer.find_or_create_event(db, summarizer_main.llm, embedding, title, user_id)
-                
-                # Stage 3: Rank
-                from services.summarizer.main import get_filter_config
-                config = get_filter_config(user_id)
-                
-                # Fetch real source quality from DB
-                quality = get_source_quality(article.get("source_id"), user_id)
-                
-                signals = scorer.RankSignals(
-                    base_relevance=3.0, # Neutral fallback for Phase 1
-                    novelty_score=novelty_score,
-                    source_quality=quality,
-                    topic_match=0.5,
-                    priority_boost=1.0 if any(t.lower() in [tc.lower() for tc in config.get("priority", [])] for t in article.get("topics", [])) else 0.0
-                )
-                final_score = scorer.compute_final_score(signals)
-                
-                # Stage 4: Research Agent (RAG)
-                result = agent.invoke({
-                    "article_text":  article.get("content", ""),
-                    "article_title": title,
-                    "user_id":       user_id,
-                    "embedding":     embedding
-                })
-                
-                # Stage 5: Upsert to Supabase
-                db.table("articles").upsert({
-                    "user_id":       user_id,
-                    "title":         title,
-                    "source_url":    article.get("source_url"),
-                    "source":        article.get("source"),
-                    "content":       article.get("content"),
-                    "embedding":     embedding,
-                    "novelty_score": novelty_score,
-                    "event_id":      event_id,
-                    "score":         final_score,
-                    "summary":       result["final_summary"],
-                    "why_it_matters": result["why_it_matters"],
-                    "v2_processed":  True
-                }, on_conflict="source_url,user_id").execute()
-                
-                acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
-                rprint(f"[green]✓ Processed: {title[:50]}... [Score: {final_score}][/green]")
-                
-            except Exception as e:
-                logger.error(f"Failed to process V2 pipeline for {title}: {e}")
+            process_article_v2(db, msg, agent, GROQ_API_KEY)
 
     # Stage 6: Compose + Deliver
     console.rule("[dim]Stage 6: Multi-Channel Delivery", align="left")

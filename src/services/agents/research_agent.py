@@ -4,9 +4,9 @@ from typing import TypedDict, Annotated, List, Dict
 import json
 from supabase import Client
 from loguru import logger
-from pydantic import BaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from shared.models import ArticleAnalysis
 
 class ResearchState(TypedDict):
     article_text:   str
@@ -15,12 +15,9 @@ class ResearchState(TypedDict):
     embedding:      List[float]
     similar_history: List[Dict]
     web_context:    str
-    final_summary:  str
+    summary:        str
     why_it_matters: str
-
-class ResearchAnalysis(BaseModel):
-    summary: str = Field(..., description="A 3-4 sentence summary of the article")
-    why_it_matters: str = Field(..., description="One sentence explaining the significance")
+    topics:         List[str]
 
 def retrieve_history(state: ResearchState, supabase: Client) -> ResearchState:
     """Node 1: Pull top-3 related articles from Supabase pgvector."""
@@ -41,7 +38,7 @@ def build_summary(state: ResearchState, groq_api_key: str) -> ResearchState:
     """Node 2: RAG-enhanced summarization with historical context."""
     # Use higher capacity model for research and lower temperature for JSON stability
     llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=groq_api_key, temperature=0.1)
-    parser = JsonOutputParser(pydantic_object=ResearchAnalysis)
+    parser = JsonOutputParser(pydantic_object=ArticleAnalysis)
 
     history_context = ""
     if state.get("similar_history"):
@@ -69,13 +66,16 @@ ARTICLE:
             "article_text": state["article_text"][:4000],
             "format_instructions": parser.get_format_instructions()
         })
-        state["final_summary"]  = result.get("summary", "")
+        # Extract structured results
+        state["summary"]        = result.get("summary", "")
         state["why_it_matters"] = result.get("why_it_matters", "")
+        state["topics"]         = result.get("topics", [])
     except Exception as e:
         logger.error(f"Build summary failed: {e}")
         # Robust fallback
-        state["final_summary"]  = f"Summary generation failed. Original start: {state['article_text'][:200]}..."
+        state["summary"]        = f"Summary generation failed. Original start: {state['article_text'][:200]}..."
         state["why_it_matters"] = "Error in analysis."
+        state["topics"]         = []
     return state
 
 def build_research_agent(supabase: Client, groq_api_key: str):

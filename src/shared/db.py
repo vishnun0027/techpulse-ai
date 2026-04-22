@@ -185,18 +185,15 @@ def get_source_quality(source_id: int, user_id: str) -> float:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
-def update_source_ingestion(source_id: int, user_id: str, count: int = 1) -> None:
-    """Increments the ingested article count for a source in source_health."""
+def update_source_ingestion(source_id: int, user_id: str) -> None:
+    """Increment source health counters using atomic RPC."""
     try:
-        # Upsert with increment logic (Postgres function call or fetch-then-save)
-        # Using a simple UPSERT here as a base
-        supabase.table("source_health").upsert({
-            "source_id": source_id,
-            "user_id": user_id,
-            "articles_ingested": 1  # Simplified for now, in prod this would be an atomic increment
-        }, on_conflict="source_id,user_id").execute()
+        supabase.rpc("increment_source_ingestion", {
+            "p_source_id": source_id,
+            "p_user_id":   user_id
+        }).execute()
     except Exception as e:
-        logger.error(f"Failed to update source ingestion: {e}")
+        logger.error(f"Failed to increment source ingestion: {e}")
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
