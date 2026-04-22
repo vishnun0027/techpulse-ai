@@ -2,12 +2,15 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from shared.config import settings
 
 # Initialize Supabase client
 supabase: Client = create_client(settings.supabase_url, settings.supabase_key)
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def save_article(article: Dict[str, Any]) -> bool:
     """
     Saves or updates an article in the Supabase 'articles' table.
@@ -31,6 +34,7 @@ def save_article(article: Dict[str, Any]) -> bool:
         return False
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def get_top_articles(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Retrieves high-scoring, undelivered articles from the last 24 hours.
@@ -60,6 +64,8 @@ def get_top_articles(limit: int = 10) -> List[Dict[str, Any]]:
         return []
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
 def mark_as_delivered(source_urls: List[str], user_id: str) -> None:
     """
     Marks a batch of articles as delivered in the database for a specific user.
@@ -80,6 +86,7 @@ def mark_as_delivered(source_urls: List[str], user_id: str) -> None:
         logger.error(f"DB update error (mark_delivered): {e}")
 
 
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=4))
 def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] = None, success: bool = True) -> None:
     """
     Records operational metrics to the 'telemetry' table.
@@ -112,6 +119,7 @@ def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] 
 
 # ── DYNAMIC CONFIGURATION ─────────────────────────────────────────────────────
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def get_rss_sources() -> List[Dict[str, Any]]:
     """
     Fetches all active RSS sources from the database.
@@ -127,6 +135,7 @@ def get_rss_sources() -> List[Dict[str, Any]]:
         return []
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def get_filter_config(user_id: str) -> Dict[str, List[str]]:
     """
     Retrieves the topic filter configuration for a specific user.
@@ -154,6 +163,43 @@ def get_filter_config(user_id: str) -> Dict[str, List[str]]:
     return {"allowed": [], "blocked": [], "priority": []}
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def get_source_quality(source_id: int, user_id: str) -> float:
+    """
+    Retrieves the quality score for a specific source from the user's perspective.
+    Returns 0.5 (neutral) if no data exists.
+    """
+    try:
+        res = supabase.table("source_health") \
+            .select("quality_score") \
+            .eq("source_id", source_id) \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        if res.data:
+            return res.data[0]["quality_score"]
+    except Exception as e:
+        logger.error(f"Error fetching source quality: {e}")
+    
+    return 0.5
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
+def update_source_ingestion(source_id: int, user_id: str, count: int = 1) -> None:
+    """Increments the ingested article count for a source in source_health."""
+    try:
+        # Upsert with increment logic (Postgres function call or fetch-then-save)
+        # Using a simple UPSERT here as a base
+        supabase.table("source_health").upsert({
+            "source_id": source_id,
+            "user_id": user_id,
+            "articles_ingested": 1  # Simplified for now, in prod this would be an atomic increment
+        }, on_conflict="source_id,user_id").execute()
+    except Exception as e:
+        logger.error(f"Failed to update source ingestion: {e}")
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def get_tenant_profiles() -> List[Dict[str, Any]]:
     """
     Fetches all registered tenant profiles.

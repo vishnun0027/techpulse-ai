@@ -17,7 +17,7 @@ class ArticleAnalysis(BaseModel):
     """Schema for structured AI analysis of a technology article."""
     score: float = Field(..., ge=0.0, le=5.0, description="Relevance score 0.0 to 5.0")
     summary: str = Field(..., description="2-3 sentence summary explaining the technical significance")
-    topics: List[str] = Field(..., description="List of relevant topic tags (e.g., AI, LLM, Rust)")
+    topics: List[str] = Field(..., description="List of topic tags. The FIRST tag MUST be a high-level category with an emoji (e.g., '🛠️ Python', '🦀 Rust')")
 
 
 # ── LangChain Setup ───────────────────────────────────────────────────────────
@@ -35,8 +35,10 @@ Analyze the article and return valid JSON only:
 {{
   "score": <float 0.0-5.0>,
   "summary": "<2-3 sentences why it matters to the user>",
-  "topics": ["<tag1>", "<tag2>"]
+  "topics": ["<emoji> <Category>", "<tag1>", "<tag2>"]
 }}
+
+The FIRST topic in the list MUST be a concise category (e.g., '🛠️ Python', '🦀 Rust', '☁️ Cloud', '🧠 AI Research') based on your analysis.
 
 Target Topics (for scoring relevance): {allowed_topics}
 

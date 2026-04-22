@@ -92,7 +92,7 @@ def ensure_group_exists(group_name: str) -> None:
         group_name: The name of the Redis consumer group.
     """
     try:
-        redis.execute(command=["XGROUP", "CREATE", STREAM_RAW, group_name, "$", "MKSTREAM"])
+        redis.execute(command=["XGROUP", "CREATE", STREAM_RAW, group_name, "0", "MKSTREAM"])
     except Exception as e:
         if "BUSYGROUP" not in str(e):
             raise e
