@@ -63,6 +63,14 @@ def purge_old_data(days: int = 90):
         logger.error(f"Purge failed: {e}")
 
 
+async def reset():
+    """Wipes all pipeline data (Redis + DB) for a clean restart."""
+    logger.warning("⚠️ PROCEEDING WITH FULL STORAGE RESET...")
+    clear_redis()
+    clear_db()
+    logger.success("✨ Master Reset Complete. System is now in a clean state.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="TechPulse AI Maintenance Control")
     parser.add_argument("action", choices=["reset", "purge"], help="Action to perform")

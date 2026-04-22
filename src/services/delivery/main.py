@@ -1,42 +1,12 @@
 import httpx
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from loguru import logger
-from shared.db import get_top_articles, mark_as_delivered, log_telemetry, get_tenant_profiles
+from shared.db import supabase, mark_as_delivered, log_telemetry, get_tenant_profiles
 from shared.redis_client import redis, STREAM_RAW
 
-# ── Theme Configuration ───────────────────────────────────────────────────────
-
-THEMES = {
-    "🧠 Generative AI": ["ai", "llm", "chatgpt", "gpt", "anthropic", "claude", "gemini", "rag", "agent"],
-    "🤖 ML & Data": ["machine learning", "ml", "data science", "dataset", "analytics", "vision", "dataset"],
-    "🛠️ Dev Tools": ["dev tools", "python", "rust", "github", "api", "framework", "cli", "library"],
-    "🛡️ Security & Infra": ["security", "vulnerability", "breach", "cloud", "infra", "database", "postgres"],
-    "🚀 Tech Trends": ["startup", "research", "paper", "launch", "release"]
-}
-
-
-def get_theme(topics: List[str]) -> str:
-    """
-    Categorizes an article into a theme based on its topics.
-    
-    Args:
-        topics: List of topic tags from the AI analysis.
-        
-    Returns:
-        str: The selected theme emoji and name.
-    """
-    if not topics:
-        return "🌐 General Tech"
-        
-    topics_lower = [t.lower() for t in topics]
-    for theme, keywords in THEMES.items():
-        if any(k.lower() in topics_lower for k in keywords):
-            return theme
-            
-    # Dynamic fallback: Use the first relevant topic as the category
-    main_topic = topics[0].strip().title()
-    return f"📌 {main_topic}"
+# Theme Configuration is now handled dynamically by the AI in the Summarizer stage.
 
 
 def group_by_themes(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
@@ -51,22 +21,27 @@ def group_by_themes(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, 
     """
     grouped = {}
     for a in articles:
-        theme = get_theme(a.get("topics", []))
+        # The AI now puts the primary theme/category as the FIRST topic in the list
+        topics = a.get("topics", [])
+        theme = topics[0] if topics else "🌐 General Tech"
+        
         if theme not in grouped:
             grouped[theme] = []
-        if len(grouped[theme]) < 10:  # Capacity limit per theme
+        
+        if len(grouped[theme]) < 10:
             grouped[theme].append(a)
     return grouped
 
 
 # ── Payload Builders ──────────────────────────────────────────────────────────
 
-def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]], intro: Optional[str] = None) -> Dict[str, Any]:
     """
     Generates a Slack Block Kit payload for the digest.
     
     Args:
         grouped_articles: Dictionary of themed articles.
+        intro: Optional LLM-generated narrative introduction.
         
     Returns:
         Dict[str, Any]: Slack-compliant JSON payload.
@@ -74,7 +49,15 @@ def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]]) -> Dict[str
     blocks = [{
         "type": "header",
         "text": {"type": "plain_text", "text": "🚀 TechPulse Smart Digest"}
-    }, {"type": "divider"}]
+    }]
+
+    if intro:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"_{intro}_"}
+        })
+    
+    blocks.append({"type": "divider"})
 
     total_count = sum(len(v) for v in grouped_articles.values())
 
@@ -84,11 +67,16 @@ def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]]) -> Dict[str
             "text": {"type": "mrkdwn", "text": f"*{theme}*"}
         })
         for a in articles:
+            # Build the narrative text: Summary + Insight
+            narrative = f"_{a['summary']}_"
+            if a.get("why_it_matters"):
+                narrative += f"\n> *Insight:* {a['why_it_matters']}"
+                
             blocks.append({
                 "type": "section",
                 "text": {"type": "mrkdwn",
                          "text": (f"• <{a['source_url']}|{a['title']}>\n"
-                                   f"  _{a['summary']}_")},
+                                   f"  {narrative}")},
                 "accessory": {
                     "type": "button",
                     "text": {"type": "plain_text", "text": f"⭐ {a['score']}"},
@@ -113,18 +101,21 @@ def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]]) -> Dict[str
     return {"blocks": blocks}
 
 
-def discord_payload_chunks(grouped_articles: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+def discord_payload_chunks(grouped_articles: Dict[str, List[Dict[str, Any]]], intro: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Generates Discord Markdown payloads, split into chunks to stay under character limits.
     
     Args:
         grouped_articles: Dictionary of themed articles.
+        intro: Optional LLM-generated narrative introduction.
         
     Returns:
         List[Dict[str, Any]]: List of Discord message payloads.
     """
     chunks = []
     current = "# 🚀 TechPulse Smart Digest\n\n"
+    if intro:
+        current += f"*{intro}*\n\n---\n"
     total_count = sum(len(v) for v in grouped_articles.values())
 
     for theme, articles in grouped_articles.items():
@@ -137,9 +128,10 @@ def discord_payload_chunks(grouped_articles: Dict[str, List[Dict[str, Any]]]) ->
             current += theme_header
 
         for i, a in enumerate(articles, 1):
+            insight = f"\n> **Insight:** {a['why_it_matters']}" if a.get("why_it_matters") else ""
             entry = (
                 f"**{i}. [{a['title']}](<{a['source_url']}>)** (Score: {a['score']})\n"
-                f"> {a['summary']}\n\n"
+                f"> {a['summary']}{insight}\n\n"
             )
             if len(current) + len(entry) > 1900:
                 chunks.append({"content": current})
@@ -167,39 +159,59 @@ def discord_payload_chunks(grouped_articles: Dict[str, List[Dict[str, Any]]]) ->
 
 # ── Delivery Manager ──────────────────────────────────────────────────────────
 
-def deliver() -> None:
+def deliver(target_user_id: Optional[str] = None, digest: Optional[Dict[str, Any]] = None) -> None:
     """
     Main delivery entry point.
     
-    1. Fetches all top-scoring articles from the last 24h.
-    2. Groups them by user.
-    3. Fetches user profiles to get Slack/Discord webhooks.
-    4. Personalizes and sends digests to each user.
-    5. Marks articles as delivered to avoid duplication.
+    If digest is provided, it uses the pre-built narrative structure.
+    Otherwise, it fetches pending articles and groups them automatically.
     """
-    all_articles = get_top_articles()
-    if not all_articles:
-        logger.warning("No articles ready to send")
-        return
+    if digest:
+        # V2 Path: Use pre-built digest
+        articles_by_user = {digest["user_id"]: digest}
+    else:
+        # V1/Legacy Path: Fetch all pending
+        all_articles = (
+            supabase.table("articles")
+            .select("user_id, title, summary, why_it_matters, source_url, source, score, topics")
+            .gte("created_at", (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat())
+            .eq("is_delivered", False)
+            .gte("score", 3.0)
+            .execute()
+        ).data or []
+        
+        if target_user_id:
+            all_articles = [a for a in all_articles if a["user_id"] == target_user_id]
+            
+        if not all_articles:
+            logger.warning("No articles ready to send")
+            return
 
-    # Map articles to users for multi-tenant delivery
-    articles_by_user = defaultdict(list)
-    for a in all_articles:
-        user_id = a.get("user_id")
-        if user_id:
-            articles_by_user[user_id].append(a)
+        # Map articles to users for multi-tenant delivery
+        articles_by_user = defaultdict(list)
+        for a in all_articles:
+            user_id = a.get("user_id")
+            if user_id:
+                articles_by_user[user_id].append(a)
 
     tenant_profiles = {p["user_id"]: p for p in get_tenant_profiles()}
     total_delivered_count = 0
 
-    for user_id, articles in articles_by_user.items():
+    for user_id, content in articles_by_user.items():
         profile = tenant_profiles.get(user_id)
         if not profile:
             logger.warning(f"User {user_id} has articles but no profile, skipping.")
             continue
 
         user_name = profile.get("full_name") or "Tech Explorer"
-        grouped = group_by_themes(articles)
+        
+        if digest:
+            grouped = digest["sections"]
+            intro = digest.get("intro")
+        else:
+            grouped = group_by_themes(content)
+            intro = None
+            
         total_to_send = sum(len(v) for v in grouped.values())
         
         logger.info(f"Delivering {total_to_send} articles to {user_name} ({user_id})...")
@@ -213,7 +225,7 @@ def deliver() -> None:
 
         # 1. Deliver to Slack
         if slack_url:
-            payload = slack_payload(grouped)
+            payload = slack_payload(grouped, intro=intro)
             payload["blocks"][0]["text"]["text"] = f"🚀 Hi {user_name}, here is your TechPulse Digest"
             try:
                 r = httpx.post(slack_url, json=payload, timeout=10)
@@ -224,10 +236,9 @@ def deliver() -> None:
 
         # 2. Deliver to Discord
         if discord_url:
-            chunks = discord_payload_chunks(grouped)
+            chunks = discord_payload_chunks(grouped, intro=intro)
             if chunks:
-                chunks[0]["content"] = f"# 🚀 Hi {user_name}, your TechPulse Digest\n\n" + \
-                                       chunks[0]["content"].replace("# 🚀 TechPulse Smart Digest\n\n", "")
+                chunks[0]["content"] = chunks[0]["content"].replace("Smart Digest", f"Digest for {user_name}")
             
             for i, chunk in enumerate(chunks):
                 try:

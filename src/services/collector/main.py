@@ -4,7 +4,7 @@ import feedparser
 from loguru import logger
 from shared.config import settings
 from shared.redis_client import check_seen, mark_seen, check_title_seen, mark_title_seen, push_to_stream
-from shared.db import log_telemetry, get_rss_sources
+from shared.db import log_telemetry, get_rss_sources, update_source_ingestion
 from services.collector.filter import is_relevant
 
 
@@ -74,10 +74,12 @@ def collect() -> None:
                         "title":      title,
                         "source_url": url,
                         "source":     src.get("name", "Unknown"),
+                        "source_id":  src.get("id"),
                         "content":    content,
                     })
                     mark_seen(url, user_id)
                     mark_title_seen(title, user_id)
+                    update_source_ingestion(src.get("id"), user_id)
                     total_queued += 1
                     logger.debug(f"Queued: {title[:60]}")
 

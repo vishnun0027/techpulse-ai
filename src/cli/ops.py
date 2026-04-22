@@ -3,11 +3,23 @@ techpulse-ops — Operator CLI
 Uses the service-role Supabase key from .env (bypasses RLS).
 Intended for server admins, cron jobs, and deployment pipelines.
 """
-from typing import Any
+from typing import Any, Dict
 import typer
 from rich.console import Console
 from rich.table import Table
 from rich import print as rprint
+from loguru import logger
+import os
+
+from services.summarizer import main as summarizer_main
+from services.delivery import main as delivery_main
+from services.enricher import embedder, deduplicator, novelty, clusterer
+from services.ranker import scorer
+from services.agents.research_agent import build_research_agent
+from services.agents.composer_agent import compose_digest
+from shared.redis_client import read_from_group, acknowledge_message, ensure_group_exists
+from shared.config import settings
+from shared.db import get_tenant_profiles, log_telemetry, get_source_quality
 
 app = typer.Typer(
     name="techpulse-ops",
@@ -33,6 +45,82 @@ def _get_db() -> Any:
     return supabase
 
 
+def get_active_users() -> list[str]:
+    """Fetches all registered user IDs from tenant profiles."""
+    profiles = get_tenant_profiles()
+    return [p["user_id"] for p in profiles]
+
+
+def process_article_v2(db: Any, msg: Dict[str, Any], agent: Any, GROQ_API_KEY: str) -> bool:
+    """
+    Executes the full V2 pipeline for a single article message.
+    Stages: 2 (Enrich), 3 (Rank), 4 (Research)
+    """
+    article = msg["data"]
+    msg_id = msg["id"]
+    user_id = article.get("user_id")
+    title = article.get("title", "Untitled")
+
+    try:
+        # Stage 2: Enrich (Semantic)
+        embedding = embedder.embed_text(article.get("content", title), GROQ_API_KEY)
+        
+        if deduplicator.is_near_duplicate(db, embedding, user_id):
+            rprint(f"[dim]SKIP: Near-duplicate: {title[:50]}...[/dim]")
+            acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
+            return False
+        
+        novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
+        event_id = clusterer.find_or_create_event(db, summarizer_main.llm, embedding, title, user_id)
+        
+        # Stage 3: Rank
+        from services.summarizer.main import get_filter_config
+        config = get_filter_config(user_id)
+        quality = get_source_quality(article.get("source_id"), user_id)
+        
+        signals = scorer.RankSignals(
+            base_relevance=3.0, # Neutral fallback
+            novelty_score=novelty_score,
+            source_quality=quality,
+            topic_match=0.5,
+            priority_boost=1.0 if any(t.lower() in [tc.lower() for tc in config.get("priority", [])] for t in article.get("topics", [])) else 0.0
+        )
+        final_score = scorer.compute_final_score(signals)
+        
+        # Stage 4: Research Agent (RAG Deep Dive)
+        result = agent.invoke({
+            "article_text":  article.get("content", ""),
+            "article_title": title,
+            "user_id":       user_id,
+            "embedding":     embedding
+        })
+        
+        # Stage 5: Save
+        db.table("articles").upsert({
+            "user_id":       user_id,
+            "title":         title,
+            "source_url":    article.get("source_url"),
+            "source":        article.get("source"),
+            "content":       article.get("content"),
+            "embedding":     embedding,
+            "novelty_score": novelty_score,
+            "event_id":      event_id,
+            "score":         final_score,
+            "summary":       result["summary"],
+            "why_it_matters": result["why_it_matters"],
+            "topics":        result.get("topics", []),
+            "v2_processed":  True
+        }, on_conflict="source_url,user_id").execute()
+        
+        acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
+        rprint(f"[green]✓ Processed: {title[:50]}... [Score: {final_score}][/green]")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to process V2 pipeline for {title}: {e}")
+        return False
+
+
 # ── Run Sub-Commands ─────────────────────────────────────────────────────────
 
 @run_app.command("collect")
@@ -47,7 +135,7 @@ def run_collect() -> None:
 @run_app.command("summarize")
 def run_summarize() -> None:
     """Analyze and summarize articles from the Redis queue using AI refinement."""
-    console.rule("[bold blue]Summarizer Service")
+    console.rule("[bold blue]Summarizer Service (Legacy/Batch)")
     import asyncio
     from services.summarizer.main import summarize
     asyncio.run(summarize())
@@ -65,12 +153,42 @@ def run_deliver() -> None:
 
 @run_app.command("all")
 def run_all() -> None:
-    """Execute the complete end-to-end pipeline: collect → summarize → deliver."""
-    console.rule("[bold cyan]Full Pipeline Orchestration")
+    """Execute the complete end-to-end V2 pipeline: collect → enrich → rank → research → deliver."""
+    console.rule("[bold cyan]TechPulse AI V2 Pipeline Orchestration")
+    
+    GROQ_API_KEY = settings.groq_api_key
+    db = _get_db()
+    
+    # Stage 1: Collect
+    ensure_group_exists(summarizer_main.GROUP_NAME)
+    console.rule("[dim]Stage 1: Collect", align="left")
     run_collect()
-    run_summarize()
-    run_deliver()
-    rprint("\n[bold green]✓ Full pipeline sequence complete.[/bold green]")
+
+    # Stage 2-5: Enrichment, Ranking, and Research
+    console.rule("[dim]Stage 2-5: Personal Intelligence Enhancement", align="left")
+    
+    # Read articles from Redis Stream
+    messages = read_from_group(summarizer_main.GROUP_NAME, summarizer_main.CONSUMER_NAME, count=50)
+    if not messages:
+        rprint("[yellow]No new articles to process.[/yellow]")
+    else:
+        rprint(f"[blue]Processing {len(messages)} articles...[/blue]")
+        agent = build_research_agent(db, GROQ_API_KEY)
+        for msg in messages:
+            process_article_v2(db, msg, agent, GROQ_API_KEY)
+
+    # Stage 6: Compose + Deliver
+    console.rule("[dim]Stage 6: Multi-Channel Delivery", align="left")
+    for user_id in get_active_users():
+        digest = compose_digest(db, summarizer_main.llm, user_id)
+        if not digest.get("empty"):
+            from services.delivery.main import deliver
+            deliver(digest=digest)
+            rprint(f"[green]✓ Digest delivered to user {user_id}[/green]")
+        else:
+            rprint(f"[yellow]No items above delivery threshold for user {user_id}[/yellow]")
+
+    rprint("\n[bold green]✓ Full TechPulse V2 pipeline sequence complete.[/bold green]")
 
 
 # ── Monitor ───────────────────────────────────────────────────────────────────

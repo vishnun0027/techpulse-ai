@@ -9,15 +9,10 @@ from tenacity import AsyncRetrying, wait_exponential, stop_after_attempt
 from shared.config import settings
 from shared.redis_client import ensure_group_exists, read_from_group, acknowledge_message
 from shared.db import save_article, log_telemetry, get_filter_config
+from shared.models import ArticleAnalysis
 
 
-# ── Structured Output Schema ──────────────────────────────────────────────────
-
-class ArticleAnalysis(BaseModel):
-    """Schema for structured AI analysis of a technology article."""
-    score: float = Field(..., ge=0.0, le=5.0, description="Relevance score 0.0 to 5.0")
-    summary: str = Field(..., description="2-3 sentence summary explaining the technical significance")
-    topics: List[str] = Field(..., description="List of relevant topic tags (e.g., AI, LLM, Rust)")
+# Shared models are now used for structured output schema
 
 
 # ── LangChain Setup ───────────────────────────────────────────────────────────
@@ -35,8 +30,10 @@ Analyze the article and return valid JSON only:
 {{
   "score": <float 0.0-5.0>,
   "summary": "<2-3 sentences why it matters to the user>",
-  "topics": ["<tag1>", "<tag2>"]
+  "topics": ["<emoji> <Category>", "<tag1>", "<tag2>"]
 }}
+
+The FIRST topic in the list MUST be a concise category (e.g., '🛠️ Python', '🦀 Rust', '☁️ Cloud', '🧠 AI Research') based on your analysis.
 
 Target Topics (for scoring relevance): {allowed_topics}
 
