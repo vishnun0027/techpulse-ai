@@ -15,17 +15,31 @@ from shared.models import ArticleAnalysis
 # Shared models are now used for structured output schema
 
 
-# ── LangChain Setup ───────────────────────────────────────────────────────────
+# ── LangChain Setup (Lazy) ───────────────────────────────────────────────────
 
-llm = ChatGroq(
-    api_key=settings.groq_api_key,
-    model=settings.groq_model,
-    temperature=0.3,
-    max_tokens=220,
-)
+_llm = None
+_chain = None
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are a senior tech intelligence officer.
+
+def get_llm():
+    """Lazy initializer for the Groq LLM."""
+    global _llm
+    if _llm is None:
+        _llm = ChatGroq(
+            api_key=settings.groq_api_key,
+            model=settings.groq_model,
+            temperature=0.3,
+            max_tokens=220,
+        )
+    return _llm
+
+
+def get_chain():
+    """Lazy initializer for the summarization chain."""
+    global _chain
+    if _chain is None:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a senior tech intelligence officer.
 Analyze the article and return valid JSON only:
 {{
   "score": <float 0.0-5.0>,
@@ -41,11 +55,11 @@ Score criteria:
 - Relevance to the Target Topics (0-2.5 pts)
 - Technical depth and insight (0-1.5 pts)
 - Novelty and importance (0-1 pt)"""),
-    ("human", "Title: {title}\nSource: {source}\nContent: {content}")
-])
-
-parser = JsonOutputParser(pydantic_object=ArticleAnalysis)
-chain = prompt | llm | parser
+            ("human", "Title: {title}\nSource: {source}\nContent: {content}")
+        ])
+        parser = JsonOutputParser(pydantic_object=ArticleAnalysis)
+        _chain = prompt | get_llm() | parser
+    return _chain
 
 
 # ── Groq Call With Async Retry ────────────────────────────────────────────────
@@ -70,7 +84,7 @@ async def call_groq_async(title: str, content: str, source: str, allowed_topics:
         stop=stop_after_attempt(3)
     ):
         with attempt:
-            result = await chain.ainvoke({
+            result = await get_chain().ainvoke({
                 "title":          title,
                 "source":         source,
                 "content":        content[:1500],

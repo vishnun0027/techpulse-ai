@@ -71,7 +71,7 @@ def process_article_v2(db: Any, msg: Dict[str, Any], agent: Any, GROQ_API_KEY: s
             return False
         
         novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
-        event_id = clusterer.find_or_create_event(db, summarizer_main.llm, embedding, title, user_id)
+        event_id = clusterer.find_or_create_event(db, summarizer_main.get_llm(), embedding, title, user_id)
         
         # Stage 3: Rank
         from services.summarizer.main import get_filter_config
@@ -180,7 +180,7 @@ def run_all() -> None:
     # Stage 6: Compose + Deliver
     console.rule("[dim]Stage 6: Multi-Channel Delivery", align="left")
     for user_id in get_active_users():
-        digest = compose_digest(db, summarizer_main.llm, user_id)
+        digest = compose_digest(db, summarizer_main.get_llm(), user_id)
         if not digest.get("empty"):
             from services.delivery.main import deliver
             deliver(digest=digest)
