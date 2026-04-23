@@ -42,8 +42,9 @@ def get_chain():
             ("system", """You are a senior tech intelligence officer.
 Analyze the article and return valid JSON only:
 {{
-  "score": <float 0.0-5.0>,
-  "summary": "<2-3 sentences why it matters to the user>",
+  "score": <float 0.0-10.0>,
+  "summary": "<2-3 sentences of core technical takeaway>",
+  "why_it_matters": "<1 sentence on specific urgency or impact>",
   "topics": ["<emoji> <Category>", "<tag1>", "<tag2>"]
 }}
 
@@ -51,10 +52,10 @@ The FIRST topic in the list MUST be a concise category (e.g., '🛠️ Python', 
 
 Target Topics (for scoring relevance): {allowed_topics}
 
-Score criteria:
-- Relevance to the Target Topics (0-2.5 pts)
-- Technical depth and insight (0-1.5 pts)
-- Novelty and importance (0-1 pt)"""),
+Score criteria (0-10.0):
+- Relevance to the Target Topics (0-5.0 pts)
+- Technical depth and insight (0-3.0 pts)
+- Novelty and importance (0-2.0 pts)"""),
             ("human", "Title: {title}\nSource: {source}\nContent: {content}")
         ])
         parser = JsonOutputParser(pydantic_object=ArticleAnalysis)
@@ -140,23 +141,25 @@ async def process_message(msg: Dict[str, Any], semaphore: asyncio.Semaphore) -> 
                 allowed_topics=config.get("allowed", [])
             )
 
-            # 4. Apply Interest Priority Boost (+20% or +1.0 point)
-            final_score: float = result.score
+            # 4. Apply Interest Priority Boost (V2: +1.5 points on 0-10 scale)
+            final_score: float = result.score or 0.0
             priority = [t.lower() for t in config.get("priority", [])]
             if any(t.lower() in priority for t in result.topics):
-                final_score = min(5.0, final_score + 1.0)
-                logger.info(f"🚀 Priority Boost (+1.0) applied to {d.get('title')[:30]}...")
+                final_score = min(10.0, final_score + 1.5)
+                logger.info(f"🚀 Priority Boost (+1.5) applied to {d.get('title')[:30]}...")
 
-            # 5. Persist to Supabase
+            # 5. Persist to Supabase (V2 Schema)
             success = save_article({
-                "user_id":    user_id,
-                "title":      d.get("title"),
-                "source_url": d.get("source_url"),
-                "source":     d.get("source"),
-                "content":    d.get("content"),
-                "summary":    result.summary,
-                "score":      final_score,
-                "topics":     result.topics,
+                "user_id":        user_id,
+                "title":          d.get("title"),
+                "source_url":     d.get("source_url"),
+                "source":         d.get("source"),
+                "content":        d.get("content"),
+                "summary":        result.summary,
+                "why_it_matters": result.why_it_matters,
+                "score":          final_score,
+                "topics":         result.topics,
+                "v2_processed":   True
             })
 
             if success:
