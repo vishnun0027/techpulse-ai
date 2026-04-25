@@ -21,16 +21,10 @@ DEFAULT_WEIGHTS = {
     "priority_boost": 0.05,
 }
 
-# Thresholds are now read from central config so they can be tuned via .env
-# without touching code. Computed once at import time.
-@property
-def DELIVERY_THRESHOLD() -> float:  # type: ignore[misc]
-    return settings.delivery_threshold
-
-
-@property
-def BREAKING_THRESHOLD() -> float:  # type: ignore[misc]
-    return settings.breaking_threshold
+# Thresholds are read from central config so they can be tuned via .env
+# without modifying code.
+DELIVERY_THRESHOLD: float = settings.delivery_threshold
+BREAKING_THRESHOLD: float = settings.breaking_threshold
 
 
 def compute_final_score(signals: RankSignals, weights: dict = DEFAULT_WEIGHTS) -> float:

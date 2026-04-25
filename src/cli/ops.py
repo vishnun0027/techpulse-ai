@@ -161,7 +161,7 @@ async def process_article_v2(
             return True
 
         except Exception as e:
-            logger.error(f"Failed to process V2 pipeline for '{title}': {e}")
+            logger.exception(f"Failed to process V2 pipeline for '{title}': {e}")
             return False
 
 

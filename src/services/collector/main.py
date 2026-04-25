@@ -1,4 +1,5 @@
 import time
+import calendar
 from datetime import datetime, timedelta, timezone
 import feedparser
 from loguru import logger
@@ -52,7 +53,9 @@ def collect() -> None:
                 # 1. Freshness Check
                 pub_date = entry.get("published_parsed")
                 if pub_date:
-                    dt = datetime.fromtimestamp(time.mktime(pub_date), tz=timezone.utc)
+                    # calendar.timegm() treats struct_time as UTC (unlike time.mktime
+                    # which uses local time and would be wrong on non-UTC servers).
+                    dt = datetime.fromtimestamp(calendar.timegm(pub_date), tz=timezone.utc)
                     if dt < cutoff:
                         logger.debug(f"Skipped (stale): {title[:40]}...")
                         continue
