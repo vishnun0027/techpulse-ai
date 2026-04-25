@@ -1,22 +1,21 @@
 # TechPulse AI 🤖
 
-### *Your intelligent tech pulse, curated by AI.*
+### *Your intelligent tech pulse, curated by Agentic AI.*
 
-TechPulse AI is a high-performance, automated news aggregator designed for developers and AI enthusiasts. It monitors top-tier tech sources, filters the noise using intelligent heuristics, and delivers concise, high-value summaries directly to Slack and Discord.
+TechPulse AI is a high-performance, automated tech intelligence system designed for developers and AI enthusiasts. It monitors top-tier tech sources, filters the noise using intelligent heuristics and semantic search, and delivers concise, high-value narrative digests directly to Slack and Discord.
 
-The system is architected for **zero-cost operation**, leveraging free-tier services (Groq, Upstash, Supabase) and optimized for minimal resource consumption.
+The system is architected for **zero-cost operation**, leveraging free-tier services (Groq, Upstash, Supabase) and optimized for minimal resource consumption. TechPulse AI V2 brings semantic memory, novelty detection, and agentic curation to your daily digest.
 
 ---
 
 ## 🔥 Key Features
 
-- **🚀 Scaling Architecture**: Fully multi-tenant. Decoupled configuration allows the pipeline to serve multiple users with isolated RSS feeds and topic filters.
-- **🧠 Personalized AI Digests**: Uses Groq (Llama 3) to summarize articles based on per-user interest profiles.
-- **🛡️ 14-Day Freshness Filter**: Automatically skips stale news (configurable via `.env`) to keep your digest current.
+- **🚀 Agentic Architecture**: A full five-stage pipeline (Collect → Enrich → Rank → Research → Compose → Deliver) powered by LLMs.
+- **🧠 Personalized AI Digests**: Uses Groq (Llama 3 & LangGraph) to summarize articles and distill "Why It Matters", categorized into dynamic themes.
+- **🛡️ Semantic Memory & Novelty**: Utilizes pgvector (HNSW) to detect duplicate stories semantically and ensure high novelty in your daily digest.
 - **🚀 Efficiency First**: Asynchronous batch processing and Redis Consumer Groups ensure high throughput with minimal resource overhead.
-- **🎛️ Professionally Standardized**: All services feature structured logging, strict type hints, and comprehensive error handling.
+- **🎛️ Multi-Tenant & Super Admin**: Secure RBAC powered by Supabase RLS, with a dedicated Super Admin Dashboard for telemetry and tenant oversight.
 - **⚡ Dual CLI System**: Dedicated tools for **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
-- **📡 Multi-Channel Delivery**: Native support for both Slack Block Kit and Discord Markdown payloads.
 
 ---
 
@@ -24,34 +23,24 @@ The system is architected for **zero-cost operation**, leveraging free-tier serv
 
 ```mermaid
 graph TD
-    Collector[Collector / RSS Scraper] -->|URL/Title Dedup| Filter[Keywords Filter]
-    Filter -->|XADD| Stream[(Redis Stream)]
-    Stream -->|XREADGROUP| Summarizer[Async Summarizer]
-    Summarizer -->|Groq API| LLM[Llama 3.1 8B]
-    Summarizer -->|Upsert| DB[(Supabase PostgreSQL)]
-    Delivery[Delivery Service] -->|Get Top Articles| DB
-    Delivery -->|Mark Delivered| DB
-    Delivery -->|Webhook| Notifications[Slack / Discord]
-
-    Collector -.->|Telemetry| TM[(Telemetry Table)]
-    Summarizer -.->|Telemetry| TM
-    Delivery -.->|Telemetry| TM
-    
-    UI[React Dashboard] -->|Query| DB
-    UI -->|Update| DB
-    
-    CLI_USER[User CLI] -->|RLS-Scoped| DB
-    CLI_OPS[Operator CLI] -->|Service-Role| DB
+    Collector[Collector] -->|XADD| Stream[(Redis Stream)]
+    Stream -->|XREADGROUP| Enricher[Enricher]
+    Enricher -->|Embed & Dedup| DB[(Supabase pgvector)]
+    Enricher --> Ranker[Ranker]
+    Ranker -->|Personalized Score| Research[Research Agent]
+    Research -->|RAG Summary & Insights| Composer[Composer Agent]
+    Composer -->|Narrative Digest| Delivery[Delivery Service]
+    Delivery -->|Webhook| Notifications[Slack / Discord / Dashboard]
 ```
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Framework**: Python 3.12+ (Asyncio, Pydantic, Loguru)
+- **Framework**: Python 3.12+ (Asyncio, Pydantic, Loguru, LangGraph)
 - **Dependency Management**: [uv](https://github.com/astral-sh/uv)
-- **Inference**: Groq (Llama-3.1-8b-instant)
-- **Database**: Supabase (PostgreSQL)
+- **Inference & Embeddings**: Groq (Llama models & nomic-embed-text)
+- **Database**: Supabase (PostgreSQL with pgvector)
 - **Stream/De-duplication**: Upstash Redis
 - **Deployment**: GitHub Actions (Scheduled CRON runs)
 
@@ -74,7 +63,7 @@ uv sync
 1. Apply the consolidated schema in your Supabase SQL Editor: [setup_supabase.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/setup_supabase.sql).
 2. (Optional) Run the study file for ETag support if you wish to implement it later: [009_smart_refresh.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/009_smart_refresh.sql).
 
-### 3. Environment Config
+### 4. Environment Config
 Create a `.env` file from the following template:
 ```env
 SUPABASE_URL=your_url
@@ -89,7 +78,7 @@ DEDUP_TTL_DAYS=7
 COLLECTION_INTERVAL_DAYS=14             # How far back to look (default 14 days)
 ```
 
-### 4. Running Locally
+### 5. Running Locally
 
 **System Pipeline (Operator)**:
 ```bash

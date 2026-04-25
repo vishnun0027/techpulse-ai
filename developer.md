@@ -4,46 +4,41 @@ This document provides a technical deep-dive into the TechPulse AI architecture,
 
 ## 🏗️ Architecture & Data Flow
 
-TechPulse AI follows a decoupled, event-driven architecture using Redis Streams as a message broker and Supabase as a persistent multi-tenant store.
+TechPulse AI V2 transitions from a simple RSS aggregator to an **Agentic Tech Intelligence System**. It uses a pipeline structure defined by five major stages.
 
 ```mermaid
 graph TD
-    Collector[Collector / RSS Scraper] -->|URL/Title Dedup| Filter[Keywords Filter]
-    Filter -->|XADD| Stream[(Redis Stream)]
-    Stream -->|XREADGROUP| Summarizer[Async Summarizer]
-    Summarizer -->|Groq API| LLM[Llama 3.1 8B]
-    Summarizer -->|Upsert| DB[(Supabase PostgreSQL)]
-    Delivery[Delivery Service] -->|Get Top Articles| DB
-    Delivery -->|Mark Delivered| DB
-    Delivery -->|Webhook| Notifications[Slack / Discord]
-
-    Collector -.->|Telemetry| TM[(Telemetry Table)]
-    Summarizer -.->|Telemetry| TM
-    Delivery -.->|Telemetry| TM
+    Collector[Collector] -->|Scrape & Dedup| Stream[(Redis Stream)]
+                             
+    Stream -->|Consume| Enricher[Enricher]
+    Enricher -->|Vector Embeddings| VectorDB[(pgvector)]
+    Enricher -->|Novelty & Clustering| Ranker[Ranker]
     
-    UI[React Dashboard] -->|Query| DB
-    UI -->|Update| DB
+    Ranker -->|Relevance Scoring| ResearchAgent[Research Agent]
+    ResearchAgent -->|RAG & Context| ComposerAgent[Composer Agent]
     
-    CLI_USER[User CLI] -->|RLS-Scoped| DB
-    CLI_OPS[Operator CLI] -->|Service-Role| DB
+    ComposerAgent -->|Dynamic Themes| DB[(Supabase SQL)]
+    ComposerAgent --> Delivery[Delivery Service]
 ```
 
 ### 1. The Collection Pipeline (`Collector`)
 The collector runs concurrently across all active RSS sources listed in the `rss_sources` table.
-- **Freshness**: Uses a strict publication date cutoff (default 14 days).
+- **Freshness**: Uses a strict publication date cutoff.
 - **Deduplication**: Uses Redis for fast URL and title-slug hashing (`seen:{user_id}:{hash}`).
-- **Relevance**: Performs an initial keyword match against personal interest profiles before queueing.
+- **Source Health**: Captures metrics on ingestion vs delivery to auto-downgrade noisy feeds.
 
-### 2. The AI Engine (`Summarizer`)
-The summarizer is an asynchronous consumer that drains the Redis Stream.
-- **Reliability**: Uses **Redis Consumer Groups**. Workers prioritize *pending* messages (messages sent but not yet acknowledged) before taking new ones. This ensures no article is lost if a worker crashes.
-- **Scoring**: Groq LLM (Llama 3) generates a relevance score (0-5).
-- **Boosting**: Topics matched against the `priority` list receive a **+1.0 boost** to ensure they appearing in the daily digest.
+### 2. The Enrichment Engine (`Enricher`)
+- **Embeddings**: Uses Groq `nomic-embed-text` to generate 768-dimensional vectors.
+- **Semantic Deduplication**: Checks `pgvector` index via HNSW for near-identical matches to avoid "same story, multiple sources" spam.
+- **Novelty Scoring**: Calculates uniqueness against the user's historical feed.
 
-### 3. Distribution (`Delivery`)
-The delivery service groups high-scoring, undelivered articles by tenant.
-- **Personalization**: Each user receives a unique digest based on their specific scores.
-- **Thematic Grouping**: Articles are clustered into curated themes (e.g., "🧠 Generative AI") using keyword mapping.
+### 3. The Decide & Research Pipeline (`Ranker` & `Research Agent`)
+- **Scoring**: Combines base LLM relevance, novelty score, source quality, and explicit user feedback.
+- **Research Agent**: Utilizes context retrieval to provide historical insight, ultimately synthesizing a precise summary and extracting the "Why It Matters" takeaway.
+
+### 4. Distribution & Curation (`Composer` & `Delivery`)
+- **Dynamic Theming**: The Composer Agent assigns dynamic thematic groupings (e.g. "Generative AI", "Developer Tools") replacing hardcoded taxonomies.
+- **Delivery**: High-scoring items are packaged into a narrative morning digest grouped by the AI-assigned themes and sent via webhooks to Slack/Discord.
 
 ---
 
@@ -56,10 +51,11 @@ TechPulse Pro uses **Supabase Row Level Security (RLS)** to ensure data isolatio
 | `articles` | `auth.uid() = user_id` | Users can only see/delete their own news. |
 | `app_config` | `auth.uid() = user_id` | Topic settings are private per user. |
 | `rss_sources` | `auth.uid() = user_id` | Sources are isolated per tenant. |
+| `tenant_profiles` | `is_admin` | Drives access to the Super Admin Dashboard. |
 
 ### CLI Tool Contexts:
 - **`techpulse` (User)**: Authenticates as a specific user. It uses the `anon` key + user JWT. Access is restricted by RLS.
-- **`techpulse-ops` (Operator)**: Uses the `service_role` key. It bypasses RLS for system-wide maintenance and pipeline execution.
+- **`techpulse-ops` (Operator)**: Uses the `service_role` key. It bypasses RLS for system-wide maintenance and pipeline execution, securely managing tenant data.
 
 ---
 
