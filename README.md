@@ -12,10 +12,10 @@ Currently, the project is structured around localized collection, AI summarizati
 
 TechPulse AI V2 introduces next-level features tailored for RAG-based personalized news workflows that emphasize recency, grounding, and user-specific relevance over raw volume:
 
-- **Vectors & Novelty Scoring**: By implementing vector-level similarity using `pgvector` and local embedding models (`all-mpnet-base-v2`), TechPulse suppresses "same story, new headline" repeats and surfaces genuinely novel developments.
-- **RAG Memory over Past Coverage**: Agents retrieve semantically related history for every incoming article. Summaries are therefore aware of past coverage, tracking *how* a story evolved instead of just treating it as a new event.
-- **Personalized Interest Model**: An additive scoring engine learns real user priorities by mixing explicit topic filters (e.g., Python, Crypto) with implicit quality scores, tracking both user engagement and source reliability.
-- **Digest Composer**: Instead of listing isolated articles, the system composes a decision-ready narrative brief grouped logically into themes like 🧠 Generative AI, 🔒 Security, 🏢 Industry (launches/funding/regulation), and 🔧 Developer Tools.
+- **Intelligent Deduplication & Novelty Tracking**: By analyzing the actual meaning of articles, TechPulse suppresses "same story, new headline" repeats and surfaces genuinely novel developments.
+- **Memory over Past Coverage**: The system retrieves related history for every incoming article. Summaries are therefore aware of past coverage, tracking *how* a story evolved instead of just treating it as an isolated event.
+- **Personalized Interest Model**: A dynamic scoring engine learns real user priorities by mixing explicit topic filters with implicit quality scores, measuring both engagement and source reliability.
+- **Narrative Digest Composer**: Instead of listing isolated links, the system composes a decision-ready narrative brief grouped logically into key themes (e.g., Generative AI, Security, Industry).
 
 ---
 
@@ -25,13 +25,13 @@ TechPulse AI extends its robust backend backbone to incorporate true agentic cap
 
 ```mermaid
 graph TD
-    Collector[Collector (RSS -> Redis Stream)] -->|Queue| Enricher
-    Enricher[Enricher (Semantic Dedup & Event Clustering)] -->|Store| DB[(Supabase pgvector)]
-    Enricher --> Ranker[Ranker (User Relevance Engine)]
-    Ranker -->|Top Scored| Research[Research Agent (LangGraph RAG)]
-    Research -->|Contextual Analysis| Composer[Composer Agent (Narrative Groups)]
-    Composer --> Delivery[Delivery Service]
-    Delivery -->|Webhooks & Web UI| Users[Slack / Discord / React Dashboard]
+    Collector["Collector (RSS -> Redis Stream)"] -->|Queue| Enricher
+    Enricher["Enricher (Semantic Dedup & Event Clustering)"] -->|Store| DB[("Database")]
+    Enricher --> Ranker["Ranker (User Relevance Engine)"]
+    Ranker -->|Top Scored| Research["Research Agent"]
+    Research -->|Contextual Analysis| Composer["Composer Agent"]
+    Composer --> Delivery["Delivery Service"]
+    Delivery -->|Webhooks & Web UI| Users["Slack / Discord / React Dashboard"]
 ```
 
 ---
