@@ -1,7 +1,7 @@
 from supabase import Client
 from loguru import logger
+from shared.config import settings
 
-NEAR_DUPLICATE_THRESHOLD = 0.92  # cosine similarity above this = same story
 
 def is_near_duplicate(
     supabase: Client,
@@ -12,7 +12,7 @@ def is_near_duplicate(
     try:
         result = supabase.rpc("is_near_duplicate", {
             "query_embedding": embedding,
-            "dup_threshold": NEAR_DUPLICATE_THRESHOLD,
+            "dup_threshold": settings.near_duplicate_threshold,
             "p_user_id": user_id
         }).execute()
         return result.data

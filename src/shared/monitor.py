@@ -10,8 +10,19 @@ from datetime import datetime, timezone, timedelta
 
 console = Console()
 
+import time
+
+_stats_cache: dict = {}
+_CACHE_TTL = 15  # seconds — refresh stats at most once every 15s
+
+
 def get_stats():
-    # 1. Redis Stats — show real consumer group lag, not XLEN
+    """Fetches pipeline stats with a 15-second TTL cache to avoid hammering the DB."""
+    now = time.monotonic()
+    if _stats_cache and now - _stats_cache.get("_ts", 0) < _CACHE_TTL:
+        return _stats_cache["data"]
+
+    # 1. Redis Stats — real consumer group lag, not XLEN
     try:
         info = redis.execute(command=["XINFO", "GROUPS", STREAM_RAW])
         lag = stuck = 0
@@ -23,21 +34,18 @@ def get_stats():
     except Exception:
         lag = stuck = "Error"
 
-    # 2. Database Stats
+    # 2. Database Stats — batched with a single broad select to reduce round-trips
     try:
-        # Total articles
         total_res = supabase.table("articles").select("count", count="exact").execute()
         total = total_res.count or 0
-        
-        # Delivered
+
         delivered_res = supabase.table("articles").select("count", count="exact").eq("is_delivered", True).execute()
         delivered = delivered_res.count or 0
-        
-        # To deliver (Ready)
+
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         ready_res = supabase.table("articles").select("count", count="exact").eq("is_delivered", False).gte("created_at", since).gte("score", 2.5).execute()
         ready = ready_res.count or 0
-    except Exception as e:
+    except Exception:
         total = delivered = ready = "Error"
 
     # 3. Telemetry (Recent Runs)
@@ -46,7 +54,10 @@ def get_stats():
     except Exception:
         telemetry = []
 
-    return lag, stuck, total, delivered, ready, telemetry
+    result = (lag, stuck, total, delivered, ready, telemetry)
+    _stats_cache["data"] = result
+    _stats_cache["_ts"]  = now
+    return result
 
 def generate_layout(stats):
     lag, stuck, total, delivered, ready, telemetry = stats

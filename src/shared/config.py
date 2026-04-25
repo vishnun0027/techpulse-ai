@@ -21,9 +21,17 @@ class Settings(BaseSettings):
     upstash_redis_rest_token: str = Field(..., description="Upstash Redis REST token")
 
     # Pipeline Tuning
-    top_n_articles: int = Field(10, description="Number of top articles to fetch per delivery run")
+    top_n_articles: int = Field(12, description="Number of top articles to fetch per delivery run")
     dedup_ttl_days: int = Field(7, description="How long to remember seen article URLs in Redis")
     collection_interval_days: int = Field(14, description="Strict cutoff for article freshness (days)")
+    
+    # V2 Logic Thresholds
+    near_duplicate_threshold: float = Field(0.92, description="Cosine similarity above which articles are duplicates")
+    delivery_threshold: float = Field(3.5, description="Score above which articles are included in digests")
+    breaking_threshold: float = Field(8.0, description="Score above which articles trigger immediate alerts")
+    
+    # Performance
+    max_concurrency: int = Field(5, description="Maximum concurrent LLM calls in the pipeline")
 
 
 # Global settings singleton

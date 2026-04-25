@@ -2,6 +2,7 @@ import hashlib
 from typing import List, Dict, Any, Optional
 from upstash_redis import Redis
 from shared.config import settings
+from shared.utils import normalize_url
 
 # Initialize Redis client
 redis: Redis = Redis(
@@ -24,7 +25,8 @@ def check_seen(url: str, user_id: str) -> bool:
     Returns:
         bool: True if the URL fingerprint exists in Redis.
     """
-    fp = hashlib.md5(url.encode()).hexdigest()
+    normalized = normalize_url(url)
+    fp = hashlib.md5(normalized.encode()).hexdigest()
     return bool(redis.exists(f"seen:{user_id}:{fp}"))
 
 
@@ -36,7 +38,8 @@ def mark_seen(url: str, user_id: str) -> None:
         url: The article URL to mark.
         user_id: The tenant ID.
     """
-    fp = hashlib.md5(url.encode()).hexdigest()
+    normalized = normalize_url(url)
+    fp = hashlib.md5(normalized.encode()).hexdigest()
     redis.setex(f"seen:{user_id}:{fp}", DEDUP_TTL, 1)
 
 

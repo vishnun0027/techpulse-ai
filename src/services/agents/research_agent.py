@@ -59,13 +59,24 @@ ARTICLE:
 
     chain = prompt | llm | parser
 
-    try:
-        result = chain.invoke({
-            "history_context": history_context or "No prior coverage found.",
-            "article_title": state["article_title"],
-            "article_text": state["article_text"][:4000],
-            "format_instructions": parser.get_format_instructions()
+    from shared.ai_utils import retry_llm_call
+
+    @retry_llm_call(max_attempts=3)
+    def call_llm(history_context, article_title, article_text, format_instructions):
+        return chain.invoke({
+            "history_context": history_context,
+            "article_title": article_title,
+            "article_text": article_text,
+            "format_instructions": format_instructions
         })
+
+    try:
+        result = call_llm(
+            history_context=history_context or "No prior coverage found.",
+            article_title=state["article_title"],
+            article_text=state["article_text"][:4000],
+            format_instructions=parser.get_format_instructions()
+        )
         # Extract structured results
         state["summary"]        = result.get("summary", "")
         state["why_it_matters"] = result.get("why_it_matters", "")
