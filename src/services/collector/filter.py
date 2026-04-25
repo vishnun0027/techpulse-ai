@@ -76,6 +76,10 @@ def is_relevant(title: str, content: str = "", user_id: Optional[str] = None) ->
     if any(b.lower() in text for b in blocked):
         return False
 
-    # 2. Must match at least one allowed topic (Safe-by-default)
-    # If the user has NO allowed topics configured, any(empty) returns False.
+    # 2. If no allowed topics configured (e.g. new user), allow all content.
+    #    Prevents new users from getting a silent empty digest on first run.
+    if not allowed:
+        return True
+
+    # 3. Must match at least one allowed topic.
     return any(t.lower() in text for t in allowed)

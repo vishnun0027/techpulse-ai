@@ -20,12 +20,15 @@ def clear_redis():
     except Exception:
         pass  # Group might not exist if it was never created
     
-    # 3. Clear deduplication keys (seen and title)
-    keys = redis.keys("seen:*") + redis.keys("title:*")
-    if keys:
-        for key in keys:
-            redis.delete(key)
-        logger.debug(f"Deleted {len(keys)} deduplication keys.")
+    # 3. Clear deduplication keys (seen and title) in a single batch command
+    seen_keys  = redis.keys("seen:*")  or []
+    title_keys = redis.keys("title:*") or []
+    all_keys   = seen_keys + title_keys
+    if all_keys:
+        # Single DEL call with all keys — avoids N separate HTTP requests to Upstash
+        redis.execute(["DEL", *all_keys])
+        logger.debug(f"Deleted {len(all_keys)} deduplication keys.")
+
     
     logger.success("Redis cleared logic applied.")
 

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from loguru import logger
-from shared.db import supabase, mark_as_delivered, log_telemetry, get_tenant_profiles
+from shared.db import supabase, mark_as_delivered, log_telemetry, get_tenant_profiles, update_source_delivery
 from shared.redis_client import redis, STREAM_RAW
 
 # Theme Configuration is now handled dynamically by the AI in the Summarizer stage.
@@ -67,33 +67,46 @@ def slack_payload(grouped_articles: Dict[str, List[Dict[str, Any]]], intro: Opti
             "text": {"type": "mrkdwn", "text": f"*{theme}*"}
         })
         for a in articles:
-            # Build the narrative text: Summary + Insight
-            narrative = f"_{a['summary']}_"
-            if a.get("why_it_matters"):
-                narrative += f"\n> *Insight:* {a['why_it_matters']}"
-                
+            # Truncate fields to stay within Slack's 3000-char block limit
+            s_title   = (a.get('title', '')   or '')[:120]
+            s_summary = (a.get('summary', '') or '')[:250]
+            s_insight = (a.get('why_it_matters', '') or '')[:150]
+            s_url     = a.get('source_url', '#')
+            s_score   = a.get('score', 0)
+
+            narrative = f"_{s_summary}_"
+            if s_insight:
+                narrative += f"\n> *Insight:* {s_insight}"
+
             blocks.append({
                 "type": "section",
                 "text": {"type": "mrkdwn",
-                         "text": (f"• <{a['source_url']}|{a['title']}>\n"
+                         "text": (f"• <{s_url}|{s_title}>\n"
                                    f"  {narrative}")},
                 "accessory": {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": f"⭐ {a['score']}"},
-                    "url": a['source_url']
+                    "text": {"type": "plain_text", "text": f"⭐ {s_score}"},
+                    "url": s_url
                 }
             })
         blocks.append({"type": "divider"})
     
-    # Add System Health context footer
+    # Add System Health context footer with accurate queue lag
     try:
-        pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
+        info = redis.execute(command=["XINFO", "GROUPS", STREAM_RAW])
+        lag = 0
+        if info:
+            group_data = next((g for g in info if "summarizer-group" in str(g)), None)
+            if group_data:
+                try:
+                    lag_idx = group_data.index("lag")
+                    lag = group_data[lag_idx + 1]
+                except Exception:
+                    lag = 0
         blocks.append({
             "type": "context",
-            "elements": [{
-                "type": "mrkdwn",
-                "text": f"📊 *System Health* — {total_count} delivered | {pending} pending in queue"
-            }]
+            "elements": [{"type": "mrkdwn",
+                          "text": f"📊 *System Health* — {total_count} delivered | {lag} items in processing queue"}]
         })
     except Exception:
         pass
@@ -144,8 +157,22 @@ def discord_payload_chunks(grouped_articles: Dict[str, List[Dict[str, Any]]], in
 
     # Add Stats Footer to the last chunk
     try:
-        pending = redis.execute(command=["XLEN", STREAM_RAW]) or 0
-        footer = f"\n---\n📊 **System Health**: {total_count} articles | {len(grouped_articles)} themes | {pending} pending"
+        # Get Consumer Group info for more accurate 'pending' count
+        info = redis.execute(command=["XINFO", "GROUPS", STREAM_RAW])
+        lag = 0
+        if info:
+            # Look for 'summarizer-group'
+            group_data = next((g for g in info if "summarizer-group" in str(g)), None)
+            if group_data:
+                # Upstash REST returns a list of lists: [['name', 'summarizer-group', 'lag', 0, ...]]
+                # Find the 'lag' index
+                try:
+                    lag_idx = group_data.index("lag")
+                    lag = group_data[lag_idx + 1]
+                except:
+                    lag = 0
+
+        footer = f"\n---\n📊 **System Health**: {total_count} articles | {lag} items in processing queue"
         
         if len(chunks[-1]["content"]) + len(footer) < 1950:
             chunks[-1]["content"] += footer
@@ -248,9 +275,10 @@ def deliver(target_user_id: Optional[str] = None, digest: Optional[Dict[str, Any
                 except Exception as e:
                     logger.error(f"Discord chunk {i+1} failed for {user_id}: {e}")
 
-        # 3. Mark batch as delivered
+        # 3. Mark batch as delivered + update source quality stats
         delivered_urls = [a["source_url"] for theme_list in grouped.values() for a in theme_list]
         mark_as_delivered(delivered_urls, user_id)
+        update_source_delivery(delivered_urls, user_id)  # activates source_quality signal
         total_delivered_count += len(delivered_urls)
 
     # 4. Record run telemetry

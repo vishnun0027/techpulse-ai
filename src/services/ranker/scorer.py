@@ -1,16 +1,18 @@
-from supabase import Client
 from dataclasses import dataclass
 from loguru import logger
+from shared.config import settings
+
 
 @dataclass
 class RankSignals:
-    base_relevance:    float  # 0–5: LLM relevance score from current summarizer
-    novelty_score:     float  # 0–1: from enricher/novelty.py
-    source_quality:    float  # 0–1: from source_health table
-    topic_match:       float  # 0–1: keyword profile match (existing logic)
-    priority_boost:    float  # +1.0 if matches priority topics (existing logic)
+    base_relevance: float  # 0–10: LLM relevance score from summarizer
+    novelty_score:  float  # 0–1: from enricher/novelty.py
+    source_quality: float  # 0–1: from source_health table
+    topic_match:    float  # 0–1: ratio of user topics matching article topics
+    priority_boost: float  # 1.0 if article matches a priority topic, else 0.0
 
-# Default weights — can be stored per user in app_config
+
+# Default weights — can be stored per user in app_config in a future iteration
 DEFAULT_WEIGHTS = {
     "base_relevance": 0.35,
     "novelty_score":  0.25,
@@ -19,22 +21,34 @@ DEFAULT_WEIGHTS = {
     "priority_boost": 0.05,
 }
 
-# Article scoring thresholds
-DELIVERY_THRESHOLD = 4.5   # articles below this are stored but not delivered
-BREAKING_THRESHOLD = 8.0   # articles above this trigger an immediate alert
+# Thresholds are now read from central config so they can be tuned via .env
+# without touching code. Computed once at import time.
+@property
+def DELIVERY_THRESHOLD() -> float:  # type: ignore[misc]
+    return settings.delivery_threshold
+
+
+@property
+def BREAKING_THRESHOLD() -> float:  # type: ignore[misc]
+    return settings.breaking_threshold
+
 
 def compute_final_score(signals: RankSignals, weights: dict = DEFAULT_WEIGHTS) -> float:
     """
     Returns a final score 0.0–10.0.
-    Articles scoring below DELIVERY_THRESHOLD are excluded from digests.
+    Articles scoring below settings.delivery_threshold are excluded from digests.
+
+    Formula:
+      base_relevance is already 0–10 from the LLM, normalized by weight.
+      All other signals are 0–1, scaled by weight × 10.
     """
     try:
         score = (
-            signals.base_relevance   * weights["base_relevance"] * 2.0 +  # normalize 0–5 to 0–1
-            signals.novelty_score    * weights["novelty_score"]  * 10.0 +
-            signals.source_quality   * weights["source_quality"] * 10.0 +
-            signals.topic_match      * weights["topic_match"]    * 10.0 +
-            signals.priority_boost   * weights["priority_boost"] * 10.0
+            signals.base_relevance * weights["base_relevance"] +
+            signals.novelty_score  * weights["novelty_score"]  * 10.0 +
+            signals.source_quality * weights["source_quality"] * 10.0 +
+            signals.topic_match    * weights["topic_match"]    * 10.0 +
+            signals.priority_boost * weights["priority_boost"] * 10.0
         )
         return round(min(score, 10.0), 4)
     except Exception as e:

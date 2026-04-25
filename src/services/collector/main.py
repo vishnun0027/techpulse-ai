@@ -69,15 +69,17 @@ def collect() -> None:
 
                 # 4. Queue for Summarization
                 try:
+                    from shared.utils import normalize_url
+                    n_url = normalize_url(url)
                     push_to_stream({
                         "user_id":    user_id,
                         "title":      title,
-                        "source_url": url,
+                        "source_url": n_url,
                         "source":     src.get("name", "Unknown"),
                         "source_id":  src.get("id"),
                         "content":    content,
                     })
-                    mark_seen(url, user_id)
+                    mark_seen(n_url, user_id)
                     mark_title_seen(title, user_id)
                     update_source_ingestion(src.get("id"), user_id)
                     total_queued += 1

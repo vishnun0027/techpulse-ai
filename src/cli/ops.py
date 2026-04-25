@@ -3,23 +3,26 @@ techpulse-ops — Operator CLI
 Uses the service-role Supabase key from .env (bypasses RLS).
 Intended for server admins, cron jobs, and deployment pipelines.
 """
-from typing import Any, Dict
+import asyncio
+from typing import Any, Dict, List
+
 import typer
 from rich.console import Console
 from rich.table import Table
 from rich import print as rprint
 from loguru import logger
-import os
 
+# ── Top-level imports only (no import-inside-function anti-pattern) ───────────
 from services.summarizer import main as summarizer_main
-from services.delivery import main as delivery_main
 from services.enricher import embedder, deduplicator, novelty, clusterer
 from services.ranker import scorer
 from services.agents.research_agent import build_research_agent
 from services.agents.composer_agent import compose_digest
+from services.collector.main import collect
+from services.delivery.main import deliver
 from shared.redis_client import read_from_group, acknowledge_message, ensure_group_exists
 from shared.config import settings
-from shared.db import get_tenant_profiles, log_telemetry, get_source_quality
+from shared.db import get_tenant_profiles, log_telemetry, get_source_quality, get_filter_config
 
 app = typer.Typer(
     name="techpulse-ops",
@@ -51,74 +54,115 @@ def get_active_users() -> list[str]:
     return [p["user_id"] for p in profiles]
 
 
-def process_article_v2(db: Any, msg: Dict[str, Any], agent: Any, GROQ_API_KEY: str) -> bool:
+def _compute_topic_match(article_topics: list[str], user_allowed: list[str]) -> float:
+    """
+    Computes a real topic match ratio: intersection of article topics vs user interests.
+    Returns a float 0.0–1.0. 0.5 is used as a neutral fallback if no topics are present.
+    """
+    if not article_topics or not user_allowed:
+        return 0.5  # neutral fallback
+
+    article_lower = {t.lower() for t in article_topics}
+    allowed_lower  = {t.lower() for t in user_allowed}
+    matches = article_lower & allowed_lower
+    # Jaccard-style: intersection over union
+    union = article_lower | allowed_lower
+    return round(len(matches) / len(union), 4) if union else 0.5
+
+
+async def process_article_v2(
+    db: Any,
+    msg: Dict[str, Any],
+    agent: Any,
+    GROQ_API_KEY: str,
+    semaphore: asyncio.Semaphore,
+) -> bool:
     """
     Executes the full V2 pipeline for a single article message.
-    Stages: 2 (Enrich), 3 (Rank), 4 (Research)
+    Stages: 2 (Enrich) → 3 (Rank) → 4 (Research) → 5 (Save)
     """
     article = msg["data"]
-    msg_id = msg["id"]
+    msg_id  = msg["id"]
     user_id = article.get("user_id")
-    title = article.get("title", "Untitled")
+    title   = article.get("title", "Untitled")
 
-    try:
-        # Stage 2: Enrich (Semantic)
-        embedding = embedder.embed_text(article.get("content", title), GROQ_API_KEY)
-        
-        if deduplicator.is_near_duplicate(db, embedding, user_id):
-            rprint(f"[dim]SKIP: Near-duplicate: {title[:50]}...[/dim]")
+    async with semaphore:
+        try:
+            loop = asyncio.get_running_loop()  # Fixed: was deprecated get_event_loop()
+
+            # ── Stage 2: Enrich (Semantic) ────────────────────────────────────
+            embedding = await loop.run_in_executor(
+                None, embedder.embed_text, article.get("content", title), GROQ_API_KEY
+            )
+
+            if deduplicator.is_near_duplicate(db, embedding, user_id):
+                rprint(f"[dim]SKIP: Near-duplicate: {title[:50]}...[/dim]")
+                acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
+                return False
+
+            novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
+            event_id = clusterer.find_or_create_event(
+                db, summarizer_main.get_llm(), embedding, title, user_id
+            )
+
+            # ── Stage 3: Rank (with real signals) ────────────────────────────
+            config  = get_filter_config(user_id)
+            quality = get_source_quality(article.get("source_id"), user_id)
+
+            # Real topic_match: compute intersection of article topics vs user profile
+            article_topics = article.get("topics", [])
+            topic_match    = _compute_topic_match(article_topics, config.get("allowed", []))
+
+            # Real base_relevance: use the score the summarizer already computed.
+            # Fallback to 5.0 (neutral) if not yet scored.
+            db_score = article.get("score")
+            base_relevance = float(db_score) if db_score is not None else 5.0
+
+            # Priority boost: +1.0 if article has a user priority topic
+            priority_topics = {t.lower() for t in config.get("priority", [])}
+            has_priority    = any(t.lower() in priority_topics for t in article_topics)
+
+            signals = scorer.RankSignals(
+                base_relevance=base_relevance,
+                novelty_score=novelty_score,
+                source_quality=quality,
+                topic_match=topic_match,
+                priority_boost=1.0 if has_priority else 0.0,
+            )
+            final_score = scorer.compute_final_score(signals)
+
+            # ── Stage 4: Research Agent (RAG Deep Dive) ───────────────────────
+            result = await loop.run_in_executor(None, agent.invoke, {
+                "article_text":  article.get("content", ""),
+                "article_title": title,
+                "user_id":       user_id,
+                "embedding":     embedding,
+            })
+
+            # ── Stage 5: Save ─────────────────────────────────────────────────
+            db.table("articles").upsert({
+                "user_id":        user_id,
+                "title":          title,
+                "source_url":     article.get("source_url"),
+                "source":         article.get("source"),
+                "content":        article.get("content"),
+                "embedding":      embedding,
+                "novelty_score":  novelty_score,
+                "event_id":       event_id,
+                "score":          final_score,
+                "summary":        result["summary"],
+                "why_it_matters": result["why_it_matters"],
+                "topics":         result.get("topics", []),
+                "v2_processed":   True,
+            }, on_conflict="source_url,user_id").execute()
+
             acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
-            return False
-        
-        novelty_score = novelty.compute_novelty_score(db, embedding, user_id)
-        event_id = clusterer.find_or_create_event(db, summarizer_main.get_llm(), embedding, title, user_id)
-        
-        # Stage 3: Rank
-        from services.summarizer.main import get_filter_config
-        config = get_filter_config(user_id)
-        quality = get_source_quality(article.get("source_id"), user_id)
-        
-        signals = scorer.RankSignals(
-            base_relevance=3.0, # Neutral fallback
-            novelty_score=novelty_score,
-            source_quality=quality,
-            topic_match=0.5,
-            priority_boost=1.0 if any(t.lower() in [tc.lower() for tc in config.get("priority", [])] for t in article.get("topics", [])) else 0.0
-        )
-        final_score = scorer.compute_final_score(signals)
-        
-        # Stage 4: Research Agent (RAG Deep Dive)
-        result = agent.invoke({
-            "article_text":  article.get("content", ""),
-            "article_title": title,
-            "user_id":       user_id,
-            "embedding":     embedding
-        })
-        
-        # Stage 5: Save
-        db.table("articles").upsert({
-            "user_id":       user_id,
-            "title":         title,
-            "source_url":    article.get("source_url"),
-            "source":        article.get("source"),
-            "content":       article.get("content"),
-            "embedding":     embedding,
-            "novelty_score": novelty_score,
-            "event_id":      event_id,
-            "score":         final_score,
-            "summary":       result["summary"],
-            "why_it_matters": result["why_it_matters"],
-            "topics":        result.get("topics", []),
-            "v2_processed":  True
-        }, on_conflict="source_url,user_id").execute()
-        
-        acknowledge_message(summarizer_main.GROUP_NAME, msg_id)
-        rprint(f"[green]✓ Processed: {title[:50]}... [Score: {final_score}][/green]")
-        return True
+            rprint(f"[green]✓ Processed: {title[:50]}... [Score: {final_score}][/green]")
+            return True
 
-    except Exception as e:
-        logger.error(f"Failed to process V2 pipeline for {title}: {e}")
-        return False
+        except Exception as e:
+            logger.error(f"Failed to process V2 pipeline for '{title}': {e}")
+            return False
 
 
 # ── Run Sub-Commands ─────────────────────────────────────────────────────────
@@ -127,7 +171,6 @@ def process_article_v2(db: Any, msg: Dict[str, Any], agent: Any, GROQ_API_KEY: s
 def run_collect() -> None:
     """Scrape new articles from all active multi-tenant RSS sources into the Redis queue."""
     console.rule("[bold blue]Collector Service")
-    from services.collector.main import collect
     collect()
     rprint("[green]✓ Collector finished.[/green]")
 
@@ -136,7 +179,6 @@ def run_collect() -> None:
 def run_summarize() -> None:
     """Analyze and summarize articles from the Redis queue using AI refinement."""
     console.rule("[bold blue]Summarizer Service (Legacy/Batch)")
-    import asyncio
     from services.summarizer.main import summarize
     asyncio.run(summarize())
     rprint("[green]✓ Summarizer finished.[/green]")
@@ -146,44 +188,48 @@ def run_summarize() -> None:
 def run_deliver() -> None:
     """Send personalized digests to all tenant webhooks (Slack/Discord)."""
     console.rule("[bold blue]Delivery Service")
-    from services.delivery.main import deliver
     deliver()
     rprint("[green]✓ Delivery finished.[/green]")
 
 
-@run_app.command("all")
-def run_all() -> None:
-    """Execute the complete end-to-end V2 pipeline: collect → enrich → rank → research → deliver."""
+async def _run_all_async() -> None:
+    """Internal async orchestrator for the full V2 pipeline."""
     console.rule("[bold cyan]TechPulse AI V2 Pipeline Orchestration")
-    
+
     GROQ_API_KEY = settings.groq_api_key
-    db = _get_db()
-    
-    # Stage 1: Collect
+    db   = _get_db()
+    loop = asyncio.get_running_loop()  # Fixed: deprecated get_event_loop()
+
+    # ── Stage 1: Collect ──────────────────────────────────────────────────────
     ensure_group_exists(summarizer_main.GROUP_NAME)
     console.rule("[dim]Stage 1: Collect", align="left")
-    run_collect()
+    await loop.run_in_executor(None, collect)
 
-    # Stage 2-5: Enrichment, Ranking, and Research
+    # ── Stage 2-5: Enrich, Rank, Research ────────────────────────────────────
     console.rule("[dim]Stage 2-5: Personal Intelligence Enhancement", align="left")
-    
-    # Read articles from Redis Stream
     messages = read_from_group(summarizer_main.GROUP_NAME, summarizer_main.CONSUMER_NAME, count=50)
+
     if not messages:
         rprint("[yellow]No new articles to process.[/yellow]")
     else:
-        rprint(f"[blue]Processing {len(messages)} articles...[/blue]")
-        agent = build_research_agent(db, GROQ_API_KEY)
-        for msg in messages:
-            process_article_v2(db, msg, agent, GROQ_API_KEY)
+        rprint(f"[blue]Processing {len(messages)} articles concurrently (limit: {settings.max_concurrency})...[/blue]")
+        agent     = build_research_agent(db, GROQ_API_KEY)
+        semaphore = asyncio.Semaphore(settings.max_concurrency)
 
-    # Stage 6: Compose + Deliver
+        tasks   = [process_article_v2(db, msg, agent, GROQ_API_KEY, semaphore) for msg in messages]
+        results = await asyncio.gather(*tasks)
+
+        success_count = sum(1 for r in results if r)
+        rprint(f"[bold green]✓ Enrichment batch complete: {success_count}/{len(messages)} articles processed.[/bold green]")
+
+    # ── Stage 6: Compose + Deliver ────────────────────────────────────────────
     console.rule("[dim]Stage 6: Multi-Channel Delivery", align="left")
     for user_id in get_active_users():
-        digest = compose_digest(db, summarizer_main.get_llm(), user_id)
+        digest = await loop.run_in_executor(
+            None, compose_digest, db, summarizer_main.get_llm(), user_id
+        )
         if not digest.get("empty"):
-            from services.delivery.main import deliver
-            deliver(digest=digest)
+            await loop.run_in_executor(None, deliver, None, digest)
             rprint(f"[green]✓ Digest delivered to user {user_id}[/green]")
         else:
             rprint(f"[yellow]No items above delivery threshold for user {user_id}[/yellow]")
@@ -191,7 +237,13 @@ def run_all() -> None:
     rprint("\n[bold green]✓ Full TechPulse V2 pipeline sequence complete.[/bold green]")
 
 
-# ── Monitor ───────────────────────────────────────────────────────────────────
+@run_app.command("all")
+def run_all() -> None:
+    """Execute the complete end-to-end V2 pipeline in parallel."""
+    asyncio.run(_run_all_async())
+
+
+# ── Monitor ──────────────────────────────────────────────────────────────────
 
 @app.command("monitor")
 def monitor(
@@ -211,7 +263,7 @@ def monitor(
 @tenants_app.command("list")
 def tenants_list() -> None:
     """List all registered system tenants and their configured webhook status."""
-    db = _get_db()
+    db  = _get_db()
     res = db.table("tenant_profiles").select("user_id, slack_webhook_url, discord_webhook_url, created_at").execute()
     rows = res.data or []
 
@@ -221,15 +273,15 @@ def tenants_list() -> None:
 
     table = Table(title="Registered TechPulse Tenants", show_lines=True)
     table.add_column("User ID", style="cyan", no_wrap=True)
-    table.add_column("Slack", style="dim", justify="center")
-    table.add_column("Discord", style="dim", justify="center")
+    table.add_column("Slack",    style="dim", justify="center")
+    table.add_column("Discord",  style="dim", justify="center")
     table.add_column("Created At", style="dim")
 
     for r in rows:
         table.add_row(
             r["user_id"],
-            "✓" if r.get("slack_webhook_url") else "—",
-            "✓" if r.get("discord_webhook_url") else "—",
+            "✓" if r.get("slack_webhook_url")    else "—",
+            "✓" if r.get("discord_webhook_url")  else "—",
             str(r.get("created_at", ""))[:19],
         )
     console.print(table)
@@ -238,11 +290,11 @@ def tenants_list() -> None:
 @tenants_app.command("stats")
 def tenants_stats() -> None:
     """View per-tenant usage statistics, including delivered and pending article counts."""
-    db = _get_db()
+    from collections import defaultdict
+    db  = _get_db()
     res = db.table("articles").select("user_id, is_delivered").execute()
     rows = res.data or []
 
-    from collections import defaultdict
     counts = defaultdict(lambda: {"total": 0, "delivered": 0})
     for r in rows:
         uid = r["user_id"]
@@ -251,10 +303,10 @@ def tenants_stats() -> None:
             counts[uid]["delivered"] += 1
 
     table = Table(title="Per-Tenant Article Analytics", show_lines=True)
-    table.add_column("User ID", style="cyan")
+    table.add_column("User ID",      style="cyan")
     table.add_column("Total Scored", justify="right")
-    table.add_column("Delivered", justify="right", style="green")
-    table.add_column("Pending", justify="right", style="yellow")
+    table.add_column("Delivered",    justify="right", style="green")
+    table.add_column("Pending",      justify="right", style="yellow")
 
     for uid, c in sorted(counts.items()):
         pending = c["total"] - c["delivered"]
@@ -269,12 +321,11 @@ def tenants_stats() -> None:
 def reset(
     confirm: bool = typer.Option(False, "--confirm", help="Must be passed to verify destructive reset")
 ) -> None:
-    """⚠️ Danger: Wipe ALL data including articles, telemetry, and the Redis stream."""
+    """⚠️  Danger: Wipe ALL data including articles, telemetry, and the Redis stream."""
     if not confirm:
         rprint("[red]⚠️  This will delete ALL data including article history. Pass --confirm to proceed.[/red]")
         raise typer.Exit(1)
 
-    import asyncio
     from shared.maintenance import reset as do_reset
     asyncio.run(do_reset())
     rprint("[bold red]✓ All system data wiped successfully.[/bold red]")

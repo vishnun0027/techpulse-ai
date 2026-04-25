@@ -176,6 +176,27 @@ BEGIN
 END;
 $$;
 
+-- Atomic increment for article click tracking (called from the frontend)
+-- Updates quality_score = articles_clicked / articles_delivered in real time.
+CREATE OR REPLACE FUNCTION increment_source_click(p_source_id bigint, p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    INSERT INTO source_health (source_id, user_id, articles_clicked, articles_delivered, quality_score)
+    VALUES (p_source_id, p_user_id, 1, 0, 0.5)
+    ON CONFLICT (source_id, user_id)
+    DO UPDATE SET
+        articles_clicked = source_health.articles_clicked + 1,
+        quality_score = GREATEST(0.1, LEAST(1.0,
+            CASE
+                WHEN source_health.articles_delivered > 0
+                THEN ROUND((source_health.articles_clicked + 1)::numeric / source_health.articles_delivered, 4)
+                ELSE 0.5
+            END
+        )),
+        last_updated = now();
+END;
+$$;
+
 -- Match thematic clusters
 CREATE OR REPLACE FUNCTION match_events_by_centroid(query_embedding vector(768), threshold float, p_user_id uuid)
 RETURNS TABLE (id uuid, article_count int, similarity float)
