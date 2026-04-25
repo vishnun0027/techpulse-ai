@@ -65,8 +65,12 @@ def compose_digest(
 Be direct, no fluff. Start with the most important theme.
 Stories:\n{article_titles}"""
         
-        intro_response = groq_client.invoke(prompt)
-        intro = intro_response.content.strip()
+        intro_response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+        )
+        intro = intro_response.choices[0].message.content.strip()
 
         # Check for breaking news
         breaking = [a for a in articles if a.get("score", 0) >= BREAKING_THRESHOLD]

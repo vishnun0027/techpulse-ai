@@ -163,7 +163,7 @@ def get_filter_config(user_id: str) -> Dict[str, List[str]]:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def get_source_quality(source_id: int, user_id: str) -> float:
+def get_source_quality(source_id: str, user_id: str) -> float:
     """
     Retrieves the quality score for a specific source from the user's perspective.
     Returns 0.5 (neutral) if no data exists.
@@ -184,7 +184,7 @@ def get_source_quality(source_id: int, user_id: str) -> float:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
-def update_source_ingestion(source_id: int, user_id: str) -> None:
+def update_source_ingestion(source_id: str, user_id: str) -> None:
     """Increment source health counters using atomic RPC."""
     try:
         supabase.rpc("increment_source_ingestion", {

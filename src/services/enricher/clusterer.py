@@ -51,10 +51,19 @@ def find_or_create_event(
 
             old_centroid = (centroid_res.data or [{}])[0].get("centroid_embedding") or embedding
             n            = current_count
-            new_centroid = [
-                round((old_centroid[i] * n + embedding[i]) / (n + 1), 8)
-                for i in range(len(embedding))
-            ]
+
+            # Guard against dimension mismatch (e.g. after a model change)
+            if len(old_centroid) != len(embedding):
+                logger.warning(
+                    f"Centroid dimension mismatch ({len(old_centroid)} vs {len(embedding)}) "
+                    "for event {event_id} — resetting centroid to new embedding."
+                )
+                new_centroid = embedding
+            else:
+                new_centroid = [
+                    round((old_centroid[i] * n + embedding[i]) / (n + 1), 8)
+                    for i in range(len(embedding))
+                ]
 
             supabase.table("article_events").update({
                 "article_count":      n + 1,
