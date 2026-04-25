@@ -1,37 +1,48 @@
 # TechPulse AI 🤖
 
-### *Your intelligent tech pulse, curated by Agentic AI.*
+### *Your personal tech intelligence system, curated by Agentic AI.*
 
-TechPulse AI is a high-performance, automated tech intelligence system designed for developers and AI enthusiasts. It monitors top-tier tech sources, filters the noise using intelligent heuristics and semantic search, and delivers concise, high-value narrative digests directly to Slack and Discord.
+TechPulse AI goes beyond being an automated news pipeline. It is a **personal tech intelligence system** that remembers context, suppresses repetition, and explains why a development matters to *you* specifically before it ever sends an alert. 
 
-The system is architected for **zero-cost operation**, leveraging free-tier services (Groq, Upstash, Supabase) and optimized for minimal resource consumption. TechPulse AI V2 brings semantic memory, novelty detection, and agentic curation to your daily digest.
-
----
-
-## 🔥 Key Features
-
-- **🚀 Agentic Architecture**: A full five-stage pipeline (Collect → Enrich → Rank → Research → Compose → Deliver) powered by LLMs.
-- **🧠 Personalized AI Digests**: Uses Groq (Llama 3 & LangGraph) to summarize articles and distill "Why It Matters", categorized into dynamic themes.
-- **🛡️ Semantic Memory & Novelty**: Utilizes pgvector (HNSW) to detect duplicate stories semantically and ensure high novelty in your daily digest.
-- **🚀 Efficiency First**: Asynchronous batch processing and Redis Consumer Groups ensure high throughput with minimal resource overhead.
-- **🎛️ Multi-Tenant & Super Admin**: Secure RBAC powered by Supabase RLS, with a dedicated Super Admin Dashboard for telemetry and tenant oversight.
-- **⚡ Dual CLI System**: Dedicated tools for **Operators** (`techpulse-ops`) and personal **Users** (`techpulse`).
+Currently, the project is structured around localized collection, AI summarization, multi-tenant personalization, and scheduled delivery across Slack, Discord, and the web. The overarching objective is to answer a single question: **"Tell me only what changed, why it matters, and what I should watch next."**
 
 ---
 
-## 🏗️ Technical Architecture
+## 🔥 Highest-Impact Upgrades
+
+TechPulse AI V2 introduces next-level features tailored for RAG-based personalized news workflows that emphasize recency, grounding, and user-specific relevance over raw volume:
+
+- **Vectors & Novelty Scoring**: By implementing vector-level similarity using `pgvector` and local embedding models (`all-mpnet-base-v2`), TechPulse suppresses "same story, new headline" repeats and surfaces genuinely novel developments.
+- **RAG Memory over Past Coverage**: Agents retrieve semantically related history for every incoming article. Summaries are therefore aware of past coverage, tracking *how* a story evolved instead of just treating it as a new event.
+- **Personalized Interest Model**: An additive scoring engine learns real user priorities by mixing explicit topic filters (e.g., Python, Crypto) with implicit quality scores, tracking both user engagement and source reliability.
+- **Digest Composer**: Instead of listing isolated articles, the system composes a decision-ready narrative brief grouped logically into themes like 🧠 Generative AI, 🔒 Security, 🏢 Industry (launches/funding/regulation), and 🔧 Developer Tools.
+
+---
+
+## 🏗️ Technical Architecture & Pipeline
+
+TechPulse AI extends its robust backend backbone to incorporate true agentic capabilities. The flow runs as follows: **Collect → Semantic Dedup → Event Clustering → Retrieve Related History → Summarize ("What happened / Why it matters") → Rank by User Relevance → Compose Digest → Deliver**.
 
 ```mermaid
 graph TD
-    Collector[Collector] -->|XADD| Stream[(Redis Stream)]
-    Stream -->|XREADGROUP| Enricher[Enricher]
-    Enricher -->|Embed & Dedup| DB[(Supabase pgvector)]
-    Enricher --> Ranker[Ranker]
-    Ranker -->|Personalized Score| Research[Research Agent]
-    Research -->|RAG Summary & Insights| Composer[Composer Agent]
-    Composer -->|Narrative Digest| Delivery[Delivery Service]
-    Delivery -->|Webhook| Notifications[Slack / Discord / Dashboard]
+    Collector[Collector (RSS -> Redis Stream)] -->|Queue| Enricher
+    Enricher[Enricher (Semantic Dedup & Event Clustering)] -->|Store| DB[(Supabase pgvector)]
+    Enricher --> Ranker[Ranker (User Relevance Engine)]
+    Ranker -->|Top Scored| Research[Research Agent (LangGraph RAG)]
+    Research -->|Contextual Analysis| Composer[Composer Agent (Narrative Groups)]
+    Composer --> Delivery[Delivery Service]
+    Delivery -->|Webhooks & Web UI| Users[Slack / Discord / React Dashboard]
 ```
+
+---
+
+## 💻 Web App & User Experience
+
+The backend supports an advanced frontend UI (`techpulse-web`) bridging authentication, settings, and multi-tenant management. Moving forward, the product expands into three core user-facing views:
+
+1. **Morning Brief Page**: A beautifully rendered, theme-grouped narrative digest built dynamically for the user.
+2. **Ask TechPulse**: A semantic search bar over the custom article archive, allowing users to query past intelligence by meaning rather than exact keywords.
+3. **Radar View**: A visual telemetry board showing emerging themes, recurring companies, and "quiet but growing" topics across recent coverage.
 
 ---
 
@@ -39,10 +50,10 @@ graph TD
 
 - **Framework**: Python 3.12+ (Asyncio, Pydantic, Loguru, LangGraph)
 - **Dependency Management**: [uv](https://github.com/astral-sh/uv)
-- **Inference & Embeddings**: Groq (Llama models & nomic-embed-text)
-- **Database**: Supabase (PostgreSQL with pgvector)
-- **Stream/De-duplication**: Upstash Redis
-- **Deployment**: GitHub Actions (Scheduled CRON runs)
+- **Inference & Embeddings**: Groq (Llama-3.3-70b-versatile, Llama-3.1-8b-instant), Sentence-Transformers (`all-mpnet-base-v2`)
+- **Database**: Supabase (PostgreSQL with pgvector for HNSW indexing)
+- **Stream/De-duplication**: Upstash Redis REST
+- **Deployment**: Local execution or server chron targeting Slack/Discord webhooks
 
 ---
 
@@ -51,7 +62,7 @@ graph TD
 ### 1. Prerequisites
 - Python 3.12+ and `uv` installed.
 - API keys for: Groq, Supabase, and Upstash Redis.
-- Slack or Discord Webhooks (Optional).
+- Supabase Project with `vector` extension enabled.
 
 ### 2. Setup
 Clone the repo and install dependencies:
@@ -60,30 +71,26 @@ uv sync
 ```
 
 ### 3. Database Migration
-1. Apply the consolidated schema in your Supabase SQL Editor: [setup_supabase.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/setup_supabase.sql).
-2. (Optional) Run the study file for ETag support if you wish to implement it later: [009_smart_refresh.sql](file:///home/vishnu/worklab/techpulse-ai/migrations/009_smart_refresh.sql).
+Apply the V2 schema changes in your Supabase SQL Editor required for Semantic Dedup and RAG tracking found in the `migrations/` directory. Be sure the `articles` table has the `is_delivered` boolean column and the pgvector extension is turned on.
 
 ### 4. Environment Config
 Create a `.env` file from the following template:
 ```env
 SUPABASE_URL=your_url
-SUPABASE_KEY=your_service_role_key      # Required for techpulse-ops
-SUPABASE_ANON_KEY=your_anon_public_key  # Required for techpulse (User CLI)
+SUPABASE_KEY=your_service_role_key      # Required for techpulse-ops (Operator)
 GROQ_API_KEY=your_key
-GROQ_MODEL=llama-3.1-8b-instant
 UPSTASH_REDIS_REST_URL=your_url
 UPSTASH_REDIS_REST_TOKEN=your_token
 TOP_N_ARTICLES=10
-DEDUP_TTL_DAYS=7
-COLLECTION_INTERVAL_DAYS=14             # How far back to look (default 14 days)
+DEDUP_TTL_DAYS=30
+COLLECTION_INTERVAL_DAYS=14
 ```
 
-### 5. Running Locally
+### 5. Running the AI Pipeline
 
-**System Pipeline (Operator)**:
+Everything has been aggregated into a single operational script that handles concurrent execution:
+
 ```bash
-make pipeline
-# OR
 uv run techpulse-ops run all
 ```
 
@@ -94,21 +101,22 @@ uv run techpulse-ops run all
 TechPulse comes with two dedicated CLI tools.
 
 ### 🛠️ Operator CLI (`techpulse-ops`)
-For system-level management and automation (bypasses RLS).
+For system-level management, orchestration, and automation.
 ```bash
 # Run the pipeline
+uv run techpulse-ops run all
 uv run techpulse-ops run collect
-uv run techpulse-ops run summarize
 
-# Monitor system health
+# Monitor system health (live)
 uv run techpulse-ops monitor
 
-# List all tenants
+# View tenant statistics and pipeline health
 uv run techpulse-ops tenants list
+uv run techpulse-ops tenants stats
 ```
 
 ### ⚡ User CLI (`techpulse`)
-For personal management of your own feeds and filters (enforces RLS).
+For personal management of your own feeds and filters (enforces RLS and requires `SUPABASE_ANON_KEY`).
 ```bash
 # Login to your account
 uv run techpulse login
@@ -116,9 +124,6 @@ uv run techpulse login
 # Manage your sources
 uv run techpulse sources list
 uv run techpulse sources import my_feeds.txt
-
-# Inspect status
-uv run techpulse status
 ```
 
 ---
@@ -126,13 +131,13 @@ uv run techpulse status
 ## 🧹 Maintenance & Testing
 
 ### Master Storage Reset
-To wipe all Redis streams, deduplication data, and database history:
+To wipe all Redis streams, embeddings, and database history cleanly prior to a production launch:
 ```bash
-PYTHONPATH=src uv run python -m shared.maintenance reset --confirm
+uv run techpulse-ops reset --confirm
 ```
 
-### Standardized Testing
-To verify the entire logic and pipeline using `pytest`:
+### Automated Testing
+To verify the entire RAG memory, grouping logic, and pipeline using `pytest`:
 ```bash
 PYTHONPATH=src uv run pytest
 ```
