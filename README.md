@@ -8,7 +8,7 @@ Currently, the project is structured around localized collection, AI summarizati
 
 ---
 
-## 🔥 Highest-Impact Upgrades
+##  Highest-Impact Upgrades
 
 TechPulse AI V2 introduces next-level features tailored for RAG-based personalized news workflows that emphasize recency, grounding, and user-specific relevance over raw volume:
 
