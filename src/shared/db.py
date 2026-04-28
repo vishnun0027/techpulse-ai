@@ -14,17 +14,19 @@ supabase: Client = create_client(settings.supabase_url, settings.supabase_key)
 def save_article(article: Dict[str, Any]) -> bool:
     """
     Saves or updates an article in the Supabase 'articles' table.
-    
+
     Args:
         article: A dictionary containing article fields (title, summary, source_url, etc.).
-    
+
     Returns:
         bool: True if save/upsert was successful, False otherwise.
     """
     try:
-        res = supabase.table("articles") \
-            .upsert(article, on_conflict="source_url,user_id") \
+        res = (
+            supabase.table("articles")
+            .upsert(article, on_conflict="source_url,user_id")
             .execute()
+        )
         if not res.data:
             logger.error(f"DB save failed (no data returned): {res}")
             return False
@@ -38,10 +40,10 @@ def save_article(article: Dict[str, Any]) -> bool:
 def get_top_articles(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Retrieves high-scoring, undelivered articles from the last 24 hours.
-    
+
     Args:
         limit: The maximum number of articles to return per user (default: 10).
-        
+
     Returns:
         List[Dict[str, Any]]: A list of articles ready for delivery.
     """
@@ -68,7 +70,7 @@ def get_top_articles(limit: int = 10) -> List[Dict[str, Any]]:
 def mark_as_delivered(source_urls: List[str], user_id: str) -> None:
     """
     Marks a batch of articles as delivered in the database for a specific user.
-    
+
     Args:
         source_urls: List of URLs to mark.
         user_id: The ID of the tenant who received the articles.
@@ -76,20 +78,23 @@ def mark_as_delivered(source_urls: List[str], user_id: str) -> None:
     if not source_urls:
         return
     try:
-        supabase.table("articles") \
-            .update({"is_delivered": True}) \
-            .eq("user_id", user_id) \
-            .in_("source_url", source_urls) \
-            .execute()
+        supabase.table("articles").update({"is_delivered": True}).eq(
+            "user_id", user_id
+        ).in_("source_url", source_urls).execute()
     except Exception as e:
         logger.error(f"DB update error (mark_delivered): {e}")
 
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=4))
-def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] = None, success: bool = True) -> None:
+def log_telemetry(
+    service: str,
+    metrics: Dict[str, Any],
+    user_id: Optional[str] = None,
+    success: bool = True,
+) -> None:
     """
     Records operational metrics to the 'telemetry' table.
-    
+
     Args:
         service: Name of the service (e.g., 'collector', 'summarizer').
         metrics: Dictionary of metric values.
@@ -97,11 +102,7 @@ def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] 
         success: Whether the operation was successful.
     """
     try:
-        base = {
-            "service": service,
-            "success": success,
-            "metrics": metrics
-        }
+        base = {"service": service, "success": success, "metrics": metrics}
         if user_id:
             base["user_id"] = user_id
 
@@ -111,18 +112,19 @@ def log_telemetry(service: str, metrics: Dict[str, Any], user_id: Optional[str] 
                 payload["metric_name"] = name
                 payload["value"] = float(val)
                 supabase.table("telemetry").insert(payload).execute()
-        
+
     except Exception as e:
         logger.error(f"Failed to log telemetry: {e}")
 
 
 # ── DYNAMIC CONFIGURATION ─────────────────────────────────────────────────────
 
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def get_rss_sources() -> List[Dict[str, Any]]:
     """
     Fetches all active RSS sources from the database.
-    
+
     Returns:
         List[Dict[str, Any]]: List of source configurations.
     """
@@ -138,27 +140,29 @@ def get_rss_sources() -> List[Dict[str, Any]]:
 def get_filter_config(user_id: str) -> Dict[str, List[str]]:
     """
     Retrieves the topic filter configuration for a specific user.
-    
+
     Args:
         user_id: The unique ID of the tenant.
-        
+
     Returns:
         Dict[str, List[str]]: Filter configuration dictionary with 'allowed', 'blocked', and 'priority' lists.
     """
     if not user_id:
         return {"allowed": [], "blocked": [], "priority": []}
     try:
-        res = supabase.table("app_config") \
-            .select("value") \
-            .eq("key", "topics") \
-            .eq("user_id", user_id) \
+        res = (
+            supabase.table("app_config")
+            .select("value")
+            .eq("key", "topics")
+            .eq("user_id", user_id)
             .execute()
-        
+        )
+
         if res.data:
             return res.data[0]["value"]
     except Exception as e:
         logger.error(f"Error fetching filter config for {user_id}: {e}")
-    
+
     return {"allowed": [], "blocked": [], "priority": []}
 
 
@@ -169,17 +173,19 @@ def get_source_quality(source_id: str, user_id: str) -> float:
     Returns 0.5 (neutral) if no data exists.
     """
     try:
-        res = supabase.table("source_health") \
-            .select("quality_score") \
-            .eq("source_id", source_id) \
-            .eq("user_id", user_id) \
+        res = (
+            supabase.table("source_health")
+            .select("quality_score")
+            .eq("source_id", source_id)
+            .eq("user_id", user_id)
             .execute()
-        
+        )
+
         if res.data:
             return res.data[0]["quality_score"]
     except Exception as e:
         logger.error(f"Error fetching source quality: {e}")
-    
+
     return 0.5
 
 
@@ -187,10 +193,10 @@ def get_source_quality(source_id: str, user_id: str) -> float:
 def update_source_ingestion(source_id: str, user_id: str) -> None:
     """Increment source health counters using atomic RPC."""
     try:
-        supabase.rpc("increment_source_ingestion", {
-            "p_source_id": source_id,
-            "p_user_id":   user_id
-        }).execute()
+        supabase.rpc(
+            "increment_source_ingestion",
+            {"p_source_id": source_id, "p_user_id": user_id},
+        ).execute()
     except Exception as e:
         logger.error(f"Failed to increment source ingestion: {e}")
 
@@ -199,7 +205,7 @@ def update_source_ingestion(source_id: str, user_id: str) -> None:
 def get_tenant_profiles() -> List[Dict[str, Any]]:
     """
     Fetches all registered tenant profiles.
-    
+
     Returns:
         List[Dict[str, Any]]: List of tenant configuration profiles.
     """
@@ -209,6 +215,7 @@ def get_tenant_profiles() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error fetching tenant profiles: {e}")
         return []
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
 def update_source_delivery(source_urls: List[str], user_id: str) -> None:
@@ -227,45 +234,57 @@ def update_source_delivery(source_urls: List[str], user_id: str) -> None:
         return
     try:
         # Resolve source_ids from the delivered article URLs
-        res = supabase.table("articles") \
-            .select("source_id") \
-            .eq("user_id", user_id) \
-            .in_("source_url", source_urls) \
+        res = (
+            supabase.table("articles")
+            .select("source_id")
+            .eq("user_id", user_id)
+            .in_("source_url", source_urls)
             .execute()
+        )
 
-        source_ids = list({r["source_id"] for r in (res.data or []) if r.get("source_id")})
+        source_ids = list(
+            {r["source_id"] for r in (res.data or []) if r.get("source_id")}
+        )
         if not source_ids:
             return
 
         for source_id in source_ids:
-            existing = supabase.table("source_health") \
-                .select("articles_delivered, articles_clicked") \
-                .eq("source_id", source_id) \
-                .eq("user_id", user_id) \
+            existing = (
+                supabase.table("source_health")
+                .select("articles_delivered, articles_clicked")
+                .eq("source_id", source_id)
+                .eq("user_id", user_id)
                 .execute()
+            )
 
             if existing.data:
-                row           = existing.data[0]
+                row = existing.data[0]
                 new_delivered = row["articles_delivered"] + 1
-                clicked       = row["articles_clicked"]
+                clicked = row["articles_clicked"]
                 # quality_score = ratio of clicked vs delivered (0.0-1.0)
                 # Stays 0.5 (neutral) until at least one click is recorded
-                new_quality   = round(clicked / new_delivered, 4) if new_delivered > 0 else 0.5
+                new_quality = (
+                    round(clicked / new_delivered, 4) if new_delivered > 0 else 0.5
+                )
 
-                supabase.table("source_health").update({
-                    "articles_delivered": new_delivered,
-                    "quality_score":      new_quality,
-                    "last_updated":       "now()",
-                }).eq("source_id", source_id).eq("user_id", user_id).execute()
+                supabase.table("source_health").update(
+                    {
+                        "articles_delivered": new_delivered,
+                        "quality_score": new_quality,
+                        "last_updated": "now()",
+                    }
+                ).eq("source_id", source_id).eq("user_id", user_id).execute()
             else:
-                # First delivery from this source — create the row
-                supabase.table("source_health").insert({
-                    "source_id":          source_id,
-                    "user_id":            user_id,
-                    "articles_delivered": 1,
-                    "articles_clicked":   0,
-                    "quality_score":      0.5,
-                }).execute()
+                # First delivery from this source - create the row
+                supabase.table("source_health").insert(
+                    {
+                        "source_id": source_id,
+                        "user_id": user_id,
+                        "articles_delivered": 1,
+                        "articles_clicked": 0,
+                        "quality_score": 0.5,
+                    }
+                ).execute()
 
             logger.debug(f"source_health updated for source_id={source_id}")
 

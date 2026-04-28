@@ -7,7 +7,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
-    before_sleep_log
+    before_sleep_log,
 )
 from groq import RateLimitError
 import httpx
@@ -15,7 +15,7 @@ import httpx
 T = TypeVar("T")
 
 # Specific transient errors that are safe to retry.
-# Deliberately NOT including bare `Exception` — that masks real bugs.
+# Deliberately NOT including bare `Exception` - that masks real bugs.
 _TRANSIENT_ERRORS = (
     RateLimitError,
     asyncio.TimeoutError,
@@ -25,6 +25,7 @@ _TRANSIENT_ERRORS = (
     ConnectionError,
     TimeoutError,
 )
+
 
 def retry_llm_call(
     max_attempts: int = 3,
@@ -36,6 +37,7 @@ def retry_llm_call(
     Only retries on known transient errors (rate limits, timeouts, connection issues).
     Does NOT retry on logic errors like KeyError, ValueError, or AttributeError.
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @retry(
             stop=stop_after_attempt(max_attempts),
@@ -49,6 +51,7 @@ def retry_llm_call(
             return func(*args, **kwargs)
 
         return cast(Callable[..., T], wrapper)
+
     return decorator
 
 
@@ -60,8 +63,9 @@ def async_retry_llm_call(
     """
     Decorator that applies exponential backoff retries to async LLM calls.
     Only retries on known transient errors.
-    Note: This is a regular def (not async) — decorators don't need to be async.
+    Note: This is a regular def (not async) - decorators don't need to be async.
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @retry(
             stop=stop_after_attempt(max_attempts),
@@ -75,4 +79,5 @@ def async_retry_llm_call(
             return await func(*args, **kwargs)
 
         return wrapper
+
     return decorator
